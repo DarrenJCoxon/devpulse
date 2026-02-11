@@ -146,6 +146,32 @@ def main():
             except Exception:
                 pass
 
+        # Send event to DevPulse server with summary generation
+        try:
+            script_dir = Path(__file__).parent
+            send_event_script = script_dir / "send_event.py"
+
+            if send_event_script.exists():
+                # Prepare event data for send_event.py
+                event_json = json.dumps(input_data)
+
+                # Call send_event.py with --summarize flag
+                result = subprocess.run(
+                    [
+                        "uv", "run", str(send_event_script),
+                        "--source-app", os.getenv("DEVPULSE_SOURCE_APP", "claude-code"),
+                        "--event-type", "SessionEnd",
+                        "--summarize"
+                    ],
+                    input=event_json,
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                # Don't fail if send_event fails - just continue
+        except Exception:
+            pass  # Fail silently to not block Claude Code
+
         # Success
         sys.exit(0)
 

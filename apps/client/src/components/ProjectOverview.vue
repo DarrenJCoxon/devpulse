@@ -11,7 +11,8 @@
     <div
       v-for="project in projects"
       :key="project.name"
-      class="bg-[var(--theme-bg-primary)] rounded-xl border border-[var(--theme-border-primary)] shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden"
+      class="bg-[var(--theme-bg-primary)] rounded-xl border border-[var(--theme-border-primary)] shadow-sm hover:shadow-md transition-shadow transition-opacity duration-300 overflow-hidden"
+      :class="{ 'opacity-75': project.active_sessions === 0 }"
     >
       <!-- Card header -->
       <div class="px-4 py-3 border-b border-[var(--theme-border-secondary)] flex items-center justify-between">
@@ -82,11 +83,12 @@
             <div
               v-for="session in projectSessions(project.name)"
               :key="session.session_id"
-              class="flex items-center justify-between text-xs bg-[var(--theme-bg-tertiary)] rounded px-2 py-1.5"
+              class="flex items-center justify-between text-xs bg-[var(--theme-bg-tertiary)] rounded px-2 py-1.5 transition-opacity duration-300"
+              :class="{ 'opacity-50': session.status === 'idle' || session.status === 'stopped' }"
             >
               <div class="flex items-center gap-1.5">
                 <span
-                  class="w-2 h-2 rounded-full"
+                  class="w-2 h-2 rounded-full transition-colors duration-300"
                   :class="{
                     'bg-green-500': session.status === 'active',
                     'bg-yellow-500': session.status === 'waiting',

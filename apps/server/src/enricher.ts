@@ -86,12 +86,32 @@ export function initEnricher(database: Database): void {
     )
   `);
 
+  // Create agent_topology table (E4-S1)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_topology (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id TEXT NOT NULL,
+      parent_id TEXT,
+      session_id TEXT NOT NULL,
+      source_app TEXT NOT NULL,
+      project_name TEXT NOT NULL,
+      status TEXT DEFAULT 'active',
+      model_name TEXT DEFAULT '',
+      started_at INTEGER NOT NULL,
+      last_event_at INTEGER NOT NULL,
+      UNIQUE(agent_id)
+    )
+  `);
+
   db.exec('CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON sessions(session_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_name)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_dev_logs_project ON dev_logs(project_name)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_dev_logs_ended ON dev_logs(ended_at)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_agent_topology_agent_id ON agent_topology(agent_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_agent_topology_parent_id ON agent_topology(parent_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_agent_topology_project ON agent_topology(project_name)');
 }
 
 /**
@@ -150,8 +170,20 @@ export function enrichEvent(event: HookEvent): void {
       updateSessionActivity(sessionId, event.source_app, now);
       break;
 
+    case 'SubagentStart':
+      handleSubagentStart(event, now);
+      updateSessionActivity(sessionId, event.source_app, now);
+      break;
+
+    case 'SubagentStop':
+      handleSubagentStop(event, now);
+      updateSessionActivity(sessionId, event.source_app, now);
+      break;
+
     default:
       updateSessionActivity(sessionId, event.source_app, now);
+      // Update topology last_event_at for any active topology node
+      updateTopologyActivity(sessionId, event.source_app, now);
       break;
   }
 }
@@ -459,6 +491,94 @@ function buildAutoSummary(
   return `${parts.join(', ')} across ${fileCount} file${fileCount !== 1 ? 's' : ''} on ${branch}`;
 }
 
+// --- Agent Topology operations (E4-S1) ---
+
+/**
+ * Handle SubagentStart event - create topology record for child agent.
+ */
+function handleSubagentStart(event: HookEvent, now: number): void {
+  const payload = event.payload || {};
+  const childAgentId = payload.agent_id;
+
+  if (!childAgentId) {
+    console.warn('[Topology] SubagentStart missing agent_id in payload');
+    return;
+  }
+
+  // Parent is the agent that spawned this subagent
+  const parentAgentId = `${event.source_app}:${event.session_id}`;
+
+  // Get project name from parent session
+  const parentSession = db.prepare(
+    'SELECT project_name, model_name FROM sessions WHERE session_id = ? AND source_app = ?'
+  ).get(event.session_id, event.source_app) as any;
+
+  const projectName = parentSession?.project_name || event.source_app;
+  const modelName = event.model_name || parentSession?.model_name || '';
+
+  // Insert or update topology record
+  try {
+    db.prepare(`
+      INSERT INTO agent_topology (agent_id, parent_id, session_id, source_app, project_name, status, model_name, started_at, last_event_at)
+      VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)
+      ON CONFLICT(agent_id) DO UPDATE SET
+        status = 'active',
+        last_event_at = ?,
+        model_name = CASE WHEN ? != '' THEN ? ELSE model_name END
+    `).run(
+      childAgentId,
+      parentAgentId,
+      childAgentId.split(':')[1] || '', // Extract session_id from agent_id
+      childAgentId.split(':')[0] || '', // Extract source_app from agent_id
+      projectName,
+      modelName,
+      now,
+      now,
+      now,
+      modelName,
+      modelName
+    );
+  } catch (error) {
+    console.error('[Topology] Error inserting subagent:', error);
+  }
+}
+
+/**
+ * Handle SubagentStop event - mark child agent as stopped.
+ */
+function handleSubagentStop(event: HookEvent, now: number): void {
+  const payload = event.payload || {};
+  const childAgentId = payload.agent_id;
+
+  if (!childAgentId) {
+    console.warn('[Topology] SubagentStop missing agent_id in payload');
+    return;
+  }
+
+  try {
+    db.prepare(
+      "UPDATE agent_topology SET status = 'stopped', last_event_at = ? WHERE agent_id = ?"
+    ).run(now, childAgentId);
+  } catch (error) {
+    console.error('[Topology] Error stopping subagent:', error);
+  }
+}
+
+/**
+ * Update last_event_at for topology nodes on any event.
+ */
+function updateTopologyActivity(sessionId: string, sourceApp: string, now: number): void {
+  const agentId = `${sourceApp}:${sessionId}`;
+
+  try {
+    db.prepare(
+      'UPDATE agent_topology SET last_event_at = ? WHERE agent_id = ?'
+    ).run(now, agentId);
+  } catch (error) {
+    // Silently fail if agent doesn't exist in topology (not all sessions are subagents)
+  }
+}
+
 // --- Query functions for API ---
 
 export function getAllProjects(): Project[] {
@@ -530,6 +650,67 @@ export function markIdleSessions(): void {
 export function cleanupOldSessions(): void {
   const oneDayAgo = Date.now() - 86400000;
   db.prepare("DELETE FROM sessions WHERE status = 'stopped' AND last_event_at < ?").run(oneDayAgo);
+}
+
+/**
+ * Get agent topology tree, optionally filtered by project.
+ * Returns a flat array of AgentNode objects with parent-child relationships.
+ */
+export function getAgentTopology(projectName?: string): AgentNode[] {
+  let query = `
+    SELECT
+      t.agent_id,
+      t.parent_id,
+      t.status,
+      t.model_name,
+      t.project_name,
+      t.started_at,
+      t.last_event_at,
+      s.task_context
+    FROM agent_topology t
+    LEFT JOIN sessions s ON t.session_id = s.session_id AND t.source_app = s.source_app
+  `;
+
+  const params: any[] = [];
+
+  if (projectName) {
+    query += ' WHERE t.project_name = ?';
+    params.push(projectName);
+  }
+
+  query += ' ORDER BY t.started_at ASC';
+
+  const rows = db.prepare(query).all(...params) as any[];
+
+  // Build node map and tree structure
+  const nodeMap = new Map<string, AgentNode>();
+
+  for (const row of rows) {
+    nodeMap.set(row.agent_id, {
+      agent_id: row.agent_id,
+      parent_id: row.parent_id,
+      status: row.status,
+      model_name: row.model_name,
+      project_name: row.project_name,
+      task_context: row.task_context || '',
+      started_at: row.started_at,
+      last_event_at: row.last_event_at,
+      children: []
+    });
+  }
+
+  // Populate children arrays
+  for (const node of nodeMap.values()) {
+    if (node.parent_id) {
+      const parent = nodeMap.get(node.parent_id);
+      if (parent) {
+        parent.children.push(node.agent_id);
+      }
+    }
+  }
+
+  // Return flat array with populated children
+  return Array.from(nodeMap.values());
 }
 
 // --- Port Scanning for Dev Servers ---

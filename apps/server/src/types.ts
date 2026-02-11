@@ -139,6 +139,20 @@ export interface SummaryTotals {
   active_projects: number;
 }
 
+// --- Agent Topology types (E4-S1) ---
+
+export interface AgentNode {
+  agent_id: string;           // source_app:session_id
+  parent_id: string | null;   // null for root agents
+  status: SessionStatus;
+  model_name: string;
+  project_name: string;
+  task_context: string;       // JSON string or plain text
+  started_at: number;
+  last_event_at: number;
+  children: string[];         // child agent_ids
+}
+
 // --- Theme types (preserved from base repo) ---
 
 export interface ThemeColors {

@@ -1,10 +1,11 @@
 import { ref, onMounted, onUnmounted } from 'vue';
-import type { HookEvent, WebSocketMessage, Project, Session } from '../types';
+import type { HookEvent, WebSocketMessage, Project, Session, AgentNode } from '../types';
 
 export function useWebSocket(url: string) {
   const events = ref<HookEvent[]>([]);
   const projects = ref<Project[]>([]);
   const sessions = ref<Session[]>([]);
+  const topology = ref<AgentNode[]>([]);
   const isConnected = ref(false);
   const error = ref<string | null>(null);
   
@@ -45,6 +46,8 @@ export function useWebSocket(url: string) {
             projects.value = Array.isArray(message.data) ? message.data as Project[] : [];
           } else if (message.type === 'sessions') {
             sessions.value = Array.isArray(message.data) ? message.data as Session[] : [];
+          } else if (message.type === 'topology') {
+            topology.value = Array.isArray(message.data) ? message.data as AgentNode[] : [];
           }
         } catch (err) {
           console.error('Failed to parse WebSocket message:', err);
@@ -100,6 +103,7 @@ export function useWebSocket(url: string) {
     events,
     projects,
     sessions,
+    topology,
     isConnected,
     error,
     clearEvents

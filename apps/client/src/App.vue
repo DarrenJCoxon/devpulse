@@ -149,6 +149,11 @@
       />
     </template>
 
+    <!-- Topology Tab -->
+    <div v-if="activeTab === 'topology'" class="flex-1 overflow-auto">
+      <AgentTopology :topology="topology" />
+    </div>
+
     <!-- Dev Log Tab -->
     <div v-if="activeTab === 'devlog'" class="flex-1 overflow-auto">
       <DevLogTimeline :dev-logs="devLogs" />
@@ -209,6 +214,7 @@ import ThemeManager from './components/ThemeManager.vue';
 import ToastNotification from './components/ToastNotification.vue';
 import AgentSwimLaneContainer from './components/AgentSwimLaneContainer.vue';
 import ProjectOverview from './components/ProjectOverview.vue';
+import AgentTopology from './components/AgentTopology.vue';
 import DevLogTimeline from './components/DevLogTimeline.vue';
 import SummaryReport from './components/SummaryReport.vue';
 import NotificationSettings from './components/NotificationSettings.vue';
@@ -218,13 +224,14 @@ import { WS_URL } from './config';
 const tabs = [
   { id: 'projects' as const, label: 'Projects' },
   { id: 'events' as const, label: 'Events' },
+  { id: 'topology' as const, label: 'Topology' },
   { id: 'devlog' as const, label: 'Dev Log' },
   { id: 'summaries' as const, label: 'Summaries' },
 ];
-const activeTab = ref<'projects' | 'events' | 'devlog' | 'summaries'>('projects');
+const activeTab = ref<'projects' | 'events' | 'topology' | 'devlog' | 'summaries'>('projects');
 
 // WebSocket connection
-const { events, isConnected, error, clearEvents, projects, sessions } = useWebSocket(WS_URL);
+const { events, isConnected, error, clearEvents, projects, sessions, topology } = useWebSocket(WS_URL);
 
 // Projects and dev logs
 const { devLogs } = useProjects(projects, sessions);

@@ -2,7 +2,7 @@ import { initDatabase, getDb, insertEvent, getFilterOptions, getRecentEvents, up
 import {
   initEnricher, enrichEvent, getAllProjects, getActiveSessions,
   getProjectStatus, getRecentDevLogs, getDevLogsForProject,
-  markIdleSessions, cleanupOldSessions, scanPorts
+  markIdleSessions, cleanupOldSessions, scanPorts, getAgentTopology
 } from './enricher';
 import type { HookEvent, HumanInTheLoopResponse } from './types';
 import {
@@ -141,7 +141,7 @@ const server = Bun.serve({
         } catch (err) {
           console.error('[Enricher] Error:', err);
         }
-        
+
         // Broadcast to WebSocket clients
         const message = JSON.stringify({ type: 'event', data: savedEvent });
         wsClients.forEach(client => {
@@ -150,6 +150,11 @@ const server = Bun.serve({
 
         // Also broadcast updated project data
         broadcastProjects();
+
+        // Broadcast topology updates for SubagentStart/SubagentStop events
+        if (event.hook_event_type === 'SubagentStart' || event.hook_event_type === 'SubagentStop') {
+          broadcastTopology();
+        }
         
         return new Response(JSON.stringify(savedEvent), { headers: jsonHeaders });
       } catch (error) {
@@ -244,6 +249,13 @@ const server = Bun.serve({
         : getRecentDevLogs(limit);
 
       return new Response(JSON.stringify(logs), { headers: jsonHeaders });
+    }
+
+    // GET /api/topology - Get agent topology tree (E4-S1)
+    if (url.pathname === '/api/topology' && req.method === 'GET') {
+      const project = url.searchParams.get('project');
+      const topology = getAgentTopology(project || undefined);
+      return new Response(JSON.stringify(topology), { headers: jsonHeaders });
     }
 
     // GET /api/summaries - Get daily or weekly summaries
@@ -422,6 +434,10 @@ const server = Bun.serve({
 
       const sessions = getActiveSessions();
       ws.send(JSON.stringify({ type: 'sessions', data: sessions }));
+
+      // Send initial topology
+      const topology = getAgentTopology();
+      ws.send(JSON.stringify({ type: 'topology', data: topology }));
     },
     
     message(ws, message) {
@@ -446,11 +462,25 @@ function broadcastProjects() {
   const sessions = getActiveSessions();
   const message = JSON.stringify({ type: 'projects', data: projects });
   const sessMessage = JSON.stringify({ type: 'sessions', data: sessions });
-  
+
   wsClients.forEach(client => {
     try {
       client.send(message);
       client.send(sessMessage);
+    } catch {
+      wsClients.delete(client);
+    }
+  });
+}
+
+// Broadcast topology updates to all clients (E4-S1)
+function broadcastTopology() {
+  const topology = getAgentTopology();
+  const message = JSON.stringify({ type: 'topology', data: topology });
+
+  wsClients.forEach(client => {
+    try {
+      client.send(message);
     } catch {
       wsClients.delete(client);
     }

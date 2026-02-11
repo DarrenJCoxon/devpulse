@@ -6,7 +6,7 @@
         <!-- Title Section - Hidden on mobile -->
         <div class="mobile:hidden">
           <h1 class="text-2xl font-bold text-white drop-shadow-lg">
-            Multi-Agent Observability
+            DevPulse
           </h1>
         </div>
 
@@ -27,14 +27,16 @@
           </div>
         </div>
 
-        <!-- Event Count and Theme Toggle -->
+        <!-- Controls -->
         <div class="flex items-center mobile:space-x-1 space-x-2">
-          <span class="text-base mobile:text-xs text-white font-semibold drop-shadow-md bg-[var(--theme-primary-dark)] mobile:px-2 mobile:py-0.5 px-3 py-1.5 rounded-full border border-white/30">
+          <!-- Event count (always visible) -->
+          <span v-if="activeTab === 'events'" class="text-base mobile:text-xs text-white font-semibold drop-shadow-md bg-[var(--theme-primary-dark)] mobile:px-2 mobile:py-0.5 px-3 py-1.5 rounded-full border border-white/30">
             {{ events.length }}
           </span>
 
-          <!-- Clear Button -->
+          <!-- Clear Button (Events tab only) -->
           <button
+            v-if="activeTab === 'events'"
             @click="handleClearClick"
             class="p-3 mobile:p-1 rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 border border-white/30 hover:border-white/50 backdrop-blur-sm shadow-lg hover:shadow-xl"
             title="Clear events"
@@ -42,8 +44,9 @@
             <span class="text-2xl mobile:text-base">🗑️</span>
           </button>
 
-          <!-- Filters Toggle Button -->
+          <!-- Filters Toggle Button (Events tab only) -->
           <button
+            v-if="activeTab === 'events'"
             @click="showFilters = !showFilters"
             class="p-3 mobile:p-1 rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 border border-white/30 hover:border-white/50 backdrop-blur-sm shadow-lg hover:shadow-xl"
             :title="showFilters ? 'Hide filters' : 'Show filters'"
@@ -62,53 +65,81 @@
         </div>
       </div>
     </header>
-    
-    <!-- Filters -->
-    <FilterPanel
-      v-if="showFilters"
-      class="short:hidden"
-      :filters="filters"
-      @update:filters="filters = $event"
-    />
-    
-    <!-- Live Pulse Chart -->
-    <LivePulseChart
-      :events="events"
-      :filters="filters"
-      @update-unique-apps="uniqueAppNames = $event"
-      @update-all-apps="allAppNames = $event"
-      @update-time-range="currentTimeRange = $event"
-    />
 
-    <!-- Agent Swim Lane Container (below pulse chart, full width, hidden when empty) -->
-    <div v-if="selectedAgentLanes.length > 0" class="w-full bg-[var(--theme-bg-secondary)] px-3 py-4 mobile:px-2 mobile:py-2 overflow-hidden">
-      <AgentSwimLaneContainer
-        :selected-agents="selectedAgentLanes"
-        :events="events"
-        :time-range="currentTimeRange"
-        @update:selected-agents="selectedAgentLanes = $event"
-      />
+    <!-- Tab Navigation -->
+    <nav class="flex border-b border-[var(--theme-border-primary)] bg-[var(--theme-bg-primary)] px-4 overflow-x-auto">
+      <button
+        v-for="tab in tabs"
+        :key="tab.id"
+        @click="activeTab = tab.id"
+        class="px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap"
+        :class="activeTab === tab.id
+          ? 'text-[var(--theme-primary)] border-b-2 border-[var(--theme-primary)]'
+          : 'text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-secondary)]'"
+      >
+        {{ tab.label }}
+      </button>
+    </nav>
+
+    <!-- Projects Tab -->
+    <div v-if="activeTab === 'projects'" class="flex-1 overflow-auto">
+      <ProjectOverview :projects="projects" :sessions="sessions" />
     </div>
-    
-    <!-- Timeline -->
-    <div class="flex flex-col flex-1 overflow-hidden">
-      <EventTimeline
+
+    <!-- Events Tab -->
+    <template v-if="activeTab === 'events'">
+      <!-- Filters -->
+      <FilterPanel
+        v-if="showFilters"
+        class="short:hidden"
+        :filters="filters"
+        @update:filters="filters = $event"
+      />
+
+      <!-- Live Pulse Chart -->
+      <LivePulseChart
         :events="events"
         :filters="filters"
-        :unique-app-names="uniqueAppNames"
-        :all-app-names="allAppNames"
-        v-model:stick-to-bottom="stickToBottom"
-        @select-agent="toggleAgentLane"
+        @update-unique-apps="uniqueAppNames = $event"
+        @update-all-apps="allAppNames = $event"
+        @update-time-range="currentTimeRange = $event"
       />
+
+      <!-- Agent Swim Lane Container (below pulse chart, full width, hidden when empty) -->
+      <div v-if="selectedAgentLanes.length > 0" class="w-full bg-[var(--theme-bg-secondary)] px-3 py-4 mobile:px-2 mobile:py-2 overflow-hidden">
+        <AgentSwimLaneContainer
+          :selected-agents="selectedAgentLanes"
+          :events="events"
+          :time-range="currentTimeRange"
+          @update:selected-agents="selectedAgentLanes = $event"
+        />
+      </div>
+
+      <!-- Timeline -->
+      <div class="flex flex-col flex-1 overflow-hidden">
+        <EventTimeline
+          :events="events"
+          :filters="filters"
+          :unique-app-names="uniqueAppNames"
+          :all-app-names="allAppNames"
+          v-model:stick-to-bottom="stickToBottom"
+          @select-agent="toggleAgentLane"
+        />
+      </div>
+
+      <!-- Stick to bottom button -->
+      <StickScrollButton
+        class="short:hidden"
+        :stick-to-bottom="stickToBottom"
+        @toggle="stickToBottom = !stickToBottom"
+      />
+    </template>
+
+    <!-- Dev Log Tab -->
+    <div v-if="activeTab === 'devlog'" class="flex-1 overflow-auto">
+      <DevLogTimeline :dev-logs="devLogs" />
     </div>
-    
-    <!-- Stick to bottom button -->
-    <StickScrollButton
-      class="short:hidden"
-      :stick-to-bottom="stickToBottom"
-      @toggle="stickToBottom = !stickToBottom"
-    />
-    
+
     <!-- Error message -->
     <div
       v-if="error"
@@ -116,7 +147,7 @@
     >
       {{ error }}
     </div>
-    
+
     <!-- Theme Manager -->
     <ThemeManager
       :is-open="showThemeManager"
@@ -139,6 +170,7 @@
 import { ref, watch } from 'vue';
 import type { TimeRange } from './types';
 import { useWebSocket } from './composables/useWebSocket';
+import { useProjects } from './composables/useProjects';
 import { useThemes } from './composables/useThemes';
 import { useEventColors } from './composables/useEventColors';
 import EventTimeline from './components/EventTimeline.vue';
@@ -148,10 +180,23 @@ import LivePulseChart from './components/LivePulseChart.vue';
 import ThemeManager from './components/ThemeManager.vue';
 import ToastNotification from './components/ToastNotification.vue';
 import AgentSwimLaneContainer from './components/AgentSwimLaneContainer.vue';
+import ProjectOverview from './components/ProjectOverview.vue';
+import DevLogTimeline from './components/DevLogTimeline.vue';
 import { WS_URL } from './config';
 
+// Tab navigation
+const tabs = [
+  { id: 'projects' as const, label: 'Projects' },
+  { id: 'events' as const, label: 'Events' },
+  { id: 'devlog' as const, label: 'Dev Log' },
+];
+const activeTab = ref<'projects' | 'events' | 'devlog'>('projects');
+
 // WebSocket connection
-const { events, isConnected, error, clearEvents } = useWebSocket(WS_URL);
+const { events, isConnected, error, clearEvents, projects, sessions } = useWebSocket(WS_URL);
+
+// Projects and dev logs
+const { devLogs } = useProjects(projects, sessions);
 
 // Theme management (sets up theme system)
 useThemes();

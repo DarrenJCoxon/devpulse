@@ -38,19 +38,19 @@ export function useEventSearch() {
     }
 
     // Model name
-    if (event.model) {
-      parts.push(event.model);
+    if (event.model_name) {
+      parts.push(event.model_name);
     }
 
-    // Tool information
-    if (event.tool_name) {
-      parts.push(event.tool_name);
+    // Tool information (from payload)
+    if (event.payload?.tool_name) {
+      parts.push(event.payload.tool_name);
     }
-    if (event.tool_command) {
-      parts.push(event.tool_command);
+    if (event.payload?.command) {
+      parts.push(event.payload.command);
     }
-    if (event.tool_file && event.tool_file.path) {
-      parts.push(event.tool_file.path);
+    if (event.payload?.file_path) {
+      parts.push(event.payload.file_path);
     }
 
     // Summary text
@@ -59,11 +59,8 @@ export function useEventSearch() {
     }
 
     // HITL information
-    if (event.hitl_question) {
-      parts.push(event.hitl_question);
-    }
-    if (event.hitl_permission) {
-      parts.push(event.hitl_permission);
+    if (event.humanInTheLoop?.question) {
+      parts.push(event.humanInTheLoop.question);
     }
 
     return parts.join(' ').toLowerCase();

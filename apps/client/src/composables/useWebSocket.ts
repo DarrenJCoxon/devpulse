@@ -1,8 +1,10 @@
 import { ref, onMounted, onUnmounted } from 'vue';
-import type { HookEvent, WebSocketMessage } from '../types';
+import type { HookEvent, WebSocketMessage, Project, Session } from '../types';
 
 export function useWebSocket(url: string) {
   const events = ref<HookEvent[]>([]);
+  const projects = ref<Project[]>([]);
+  const sessions = ref<Session[]>([]);
   const isConnected = ref(false);
   const error = ref<string | null>(null);
   
@@ -27,18 +29,22 @@ export function useWebSocket(url: string) {
           const message: WebSocketMessage = JSON.parse(event.data);
           
           if (message.type === 'initial') {
-            const initialEvents = Array.isArray(message.data) ? message.data : [];
+            const initialEvents = Array.isArray(message.data) ? (message.data as HookEvent[]) : [];
             // Only keep the most recent events up to maxEvents
             events.value = initialEvents.slice(-maxEvents);
           } else if (message.type === 'event') {
             const newEvent = message.data as HookEvent;
             events.value.push(newEvent);
-            
+
             // Limit events array to maxEvents, removing the oldest when exceeded
             if (events.value.length > maxEvents) {
               // Remove the oldest events (first 10) when limit is exceeded
               events.value = events.value.slice(events.value.length - maxEvents + 10);
             }
+          } else if (message.type === 'projects') {
+            projects.value = Array.isArray(message.data) ? message.data as Project[] : [];
+          } else if (message.type === 'sessions') {
+            sessions.value = Array.isArray(message.data) ? message.data as Session[] : [];
           }
         } catch (err) {
           console.error('Failed to parse WebSocket message:', err);
@@ -92,6 +98,8 @@ export function useWebSocket(url: string) {
 
   return {
     events,
+    projects,
+    sessions,
     isConnected,
     error,
     clearEvents

@@ -1,0 +1,192 @@
+<template>
+  <div class="space-y-3 p-4">
+    <!-- Empty state -->
+    <div v-if="filteredLogs.length === 0" class="flex flex-col items-center justify-center py-16 text-[var(--theme-text-tertiary)]">
+      <span class="text-4xl mb-3">📝</span>
+      <p class="text-lg font-medium">No session logs yet</p>
+      <p class="text-sm mt-1">Complete a Claude Code session to see summaries here</p>
+    </div>
+
+    <!-- Log entries -->
+    <div
+      v-for="log in filteredLogs"
+      :key="log.id"
+      class="bg-[var(--theme-bg-primary)] rounded-xl border border-[var(--theme-border-primary)] shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden"
+    >
+      <!-- Collapsed card view -->
+      <div
+        class="px-4 py-3 cursor-pointer"
+        @click="toggleExpand(log.id!)"
+      >
+        <div class="flex items-start justify-between gap-3">
+          <!-- Left side: Project info, branch, summary -->
+          <div class="flex-1 min-w-0">
+            <!-- Project name and branch -->
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-base font-semibold text-[var(--theme-text-primary)]">{{ log.project_name }}</span>
+              <code class="text-xs font-mono bg-[var(--theme-bg-tertiary)] px-2 py-0.5 rounded text-[var(--theme-text-secondary)]">
+                {{ log.branch }}
+              </code>
+            </div>
+
+            <!-- Summary -->
+            <p class="text-sm text-[var(--theme-text-secondary)] line-clamp-2 mb-2">
+              {{ log.summary }}
+            </p>
+
+            <!-- Stats row -->
+            <div class="flex items-center gap-3 text-xs text-[var(--theme-text-tertiary)]">
+              <span>⏱️ {{ formatDuration(log.duration_minutes) }}</span>
+              <span>📊 {{ log.event_count }} events</span>
+              <span>{{ formatDate(log.ended_at) }}</span>
+            </div>
+          </div>
+
+          <!-- Right side: Expand indicator -->
+          <div class="flex items-center">
+            <span class="text-lg text-[var(--theme-text-quaternary)]">
+              {{ expandedLogs.has(log.id!) ? '▼' : '▶' }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Expanded detail section -->
+      <div v-if="expandedLogs.has(log.id!)" class="border-t border-[var(--theme-border-secondary)] px-4 py-3 space-y-4">
+        <!-- Tool Breakdown -->
+        <div v-if="Object.keys(parsedToolBreakdown(log)).length > 0">
+          <div class="text-xs text-[var(--theme-text-tertiary)] mb-2 font-medium uppercase tracking-wide">
+            Tool Breakdown
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <div
+              v-for="[tool, count] in Object.entries(parsedToolBreakdown(log))"
+              :key="tool"
+              class="flex items-center gap-1.5 text-xs bg-[var(--theme-bg-tertiary)] px-2.5 py-1 rounded"
+            >
+              <span>{{ toolIcon(tool) }}</span>
+              <span class="font-medium text-[var(--theme-text-secondary)]">{{ tool }}</span>
+              <span class="text-[var(--theme-text-quaternary)]">×{{ count }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Files Changed -->
+        <div v-if="parsedFiles(log).length > 0">
+          <div class="text-xs text-[var(--theme-text-tertiary)] mb-2 font-medium uppercase tracking-wide">
+            Files Changed ({{ parsedFiles(log).length }})
+          </div>
+          <div class="space-y-1 max-h-48 overflow-y-auto">
+            <div
+              v-for="(file, index) in parsedFiles(log)"
+              :key="index"
+              class="text-xs font-mono bg-[var(--theme-bg-tertiary)] px-2 py-1 rounded text-[var(--theme-text-secondary)]"
+            >
+              {{ file }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Commits -->
+        <div v-if="parsedCommits(log).length > 0">
+          <div class="text-xs text-[var(--theme-text-tertiary)] mb-2 font-medium uppercase tracking-wide">
+            Commits
+          </div>
+          <div class="space-y-1.5">
+            <div
+              v-for="(commit, index) in parsedCommits(log)"
+              :key="index"
+              class="flex items-start gap-2 text-xs"
+            >
+              <span class="text-[var(--theme-text-quaternary)] mt-0.5">•</span>
+              <span class="text-[var(--theme-text-secondary)]">{{ commit }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed } from 'vue';
+import type { DevLog } from '../types';
+
+const props = defineProps<{
+  devLogs: DevLog[];
+  projectFilter?: string;
+}>();
+
+const expandedLogs = ref<Set<number>>(new Set());
+
+// Filter logs by project if projectFilter is provided
+const filteredLogs = computed(() => {
+  const logs = props.projectFilter
+    ? props.devLogs.filter(log => log.project_name === props.projectFilter)
+    : props.devLogs;
+
+  // Sort by ended_at descending (most recent first)
+  return [...logs].sort((a, b) => b.ended_at - a.ended_at);
+});
+
+function toggleExpand(logId: number): void {
+  if (expandedLogs.value.has(logId)) {
+    expandedLogs.value.delete(logId);
+  } else {
+    expandedLogs.value.add(logId);
+  }
+}
+
+function parsedFiles(log: DevLog): string[] {
+  try {
+    return JSON.parse(log.files_changed || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function parsedCommits(log: DevLog): string[] {
+  try {
+    return JSON.parse(log.commits || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function parsedToolBreakdown(log: DevLog): Record<string, number> {
+  try {
+    return JSON.parse(log.tool_breakdown || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function toolIcon(toolName: string): string {
+  switch (toolName) {
+    case 'Read': return '📖';
+    case 'Write': return '✏️';
+    case 'Edit': return '🔧';
+    case 'Bash': return '💻';
+    default: return '⚙️';
+  }
+}
+
+function formatDate(timestamp: number): string {
+  if (!timestamp) return 'never';
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  if (seconds < 10) return 'just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+function formatDuration(minutes: number): string {
+  if (minutes < 60) {
+    return `${Math.round(minutes)}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const mins = Math.round(minutes % 60);
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+}
+</script>

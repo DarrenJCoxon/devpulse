@@ -164,6 +164,11 @@
       <SummaryReport />
     </div>
 
+    <!-- Costs Tab -->
+    <div v-if="activeTab === 'costs'" class="flex-1 overflow-auto">
+      <CostDashboard />
+    </div>
+
     <!-- Error message -->
     <div
       v-if="error"
@@ -218,6 +223,7 @@ import AgentTopology from './components/AgentTopology.vue';
 import DevLogTimeline from './components/DevLogTimeline.vue';
 import SummaryReport from './components/SummaryReport.vue';
 import NotificationSettings from './components/NotificationSettings.vue';
+import CostDashboard from './components/CostDashboard.vue';
 import { WS_URL } from './config';
 
 // Tab navigation
@@ -227,8 +233,9 @@ const tabs = [
   { id: 'topology' as const, label: 'Topology' },
   { id: 'devlog' as const, label: 'Dev Log' },
   { id: 'summaries' as const, label: 'Summaries' },
+  { id: 'costs' as const, label: 'Costs' },
 ];
-const activeTab = ref<'projects' | 'events' | 'topology' | 'devlog' | 'summaries'>('projects');
+const activeTab = ref<'projects' | 'events' | 'topology' | 'devlog' | 'summaries' | 'costs'>('projects');
 
 // WebSocket connection
 const { events, isConnected, error, clearEvents, projects, sessions, topology } = useWebSocket(WS_URL);

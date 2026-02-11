@@ -153,6 +153,61 @@ export interface AgentNode {
   children: string[];         // child agent_ids
 }
 
+// --- Cost Tracking types (E4-S2) ---
+
+export interface ModelPricing {
+  model_pattern: string;   // Regex pattern to match model_name
+  input_per_1m: number;    // USD per 1M input tokens
+  output_per_1m: number;   // USD per 1M output tokens
+  display_name: string;
+}
+
+export const DEFAULT_PRICING: ModelPricing[] = [
+  { model_pattern: 'opus', input_per_1m: 15, output_per_1m: 75, display_name: 'Opus 4.6' },
+  { model_pattern: 'sonnet', input_per_1m: 3, output_per_1m: 15, display_name: 'Sonnet 4.5' },
+  { model_pattern: 'haiku', input_per_1m: 0.80, output_per_1m: 4, display_name: 'Haiku 4.5' },
+];
+
+export interface CostEstimate {
+  id?: number;
+  session_id: string;
+  source_app: string;
+  project_name: string;
+  model_name: string;
+  estimated_input_tokens: number;
+  estimated_output_tokens: number;
+  estimated_cost_usd: number;
+  event_count: number;
+  calculated_at: number;
+}
+
+export interface ProjectCost {
+  project_name: string;
+  total_cost_usd: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  session_count: number;
+  model_distribution: Record<string, number>; // model_name -> session count
+}
+
+export interface SessionCost {
+  session_id: string;
+  source_app: string;
+  model_name: string;
+  estimated_input_tokens: number;
+  estimated_output_tokens: number;
+  estimated_cost_usd: number;
+  event_count: number;
+  started_at: number;
+  duration_minutes: number;
+}
+
+export interface DailyCost {
+  date: string;              // YYYY-MM-DD
+  total_cost_usd: number;
+  projects: Record<string, number>; // project_name -> cost
+}
+
 // --- Theme types (preserved from base repo) ---
 
 export interface ThemeColors {

@@ -174,3 +174,32 @@ export interface NotificationSettings {
   enabled: boolean;
   types: string[];
 }
+
+// --- Cost types (E4-S2) ---
+
+export interface ProjectCost {
+  project_name: string;
+  total_cost_usd: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  session_count: number;
+  model_distribution: Record<string, number>; // model_name -> session count
+}
+
+export interface SessionCost {
+  session_id: string;
+  source_app: string;
+  model_name: string;
+  estimated_input_tokens: number;
+  estimated_output_tokens: number;
+  estimated_cost_usd: number;
+  event_count: number;
+  started_at: number;
+  duration_minutes: number;
+}
+
+export interface DailyCost {
+  date: string;              // YYYY-MM-DD
+  total_cost_usd: number;
+  projects: Record<string, number>; // project_name -> cost
+}

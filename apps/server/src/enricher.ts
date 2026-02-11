@@ -12,11 +12,15 @@
 import { Database } from 'bun:sqlite';
 import type { HookEvent, Project, Session, SessionStatus, TestStatus, DevLog, ProjectStatus } from './types';
 import { parseBranchToTask } from './branch-parser';
+import { initCosts, estimateTokensFromEvent, updateCostEstimate } from './costs';
 
 let db: Database;
 
 export function initEnricher(database: Database): void {
   db = database;
+
+  // Initialize cost tracking
+  initCosts(database);
 
   // Create projects table
   db.exec(`
@@ -103,6 +107,23 @@ export function initEnricher(database: Database): void {
     )
   `);
 
+  // Create cost_estimates table (E4-S2)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cost_estimates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      source_app TEXT NOT NULL,
+      project_name TEXT NOT NULL,
+      model_name TEXT NOT NULL,
+      estimated_input_tokens INTEGER DEFAULT 0,
+      estimated_output_tokens INTEGER DEFAULT 0,
+      estimated_cost_usd REAL DEFAULT 0,
+      event_count INTEGER DEFAULT 0,
+      calculated_at INTEGER NOT NULL,
+      UNIQUE(session_id, source_app)
+    )
+  `);
+
   db.exec('CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON sessions(session_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_name)');
@@ -112,6 +133,8 @@ export function initEnricher(database: Database): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_agent_topology_agent_id ON agent_topology(agent_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_agent_topology_parent_id ON agent_topology(parent_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_agent_topology_project ON agent_topology(project_name)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_cost_estimates_project ON cost_estimates(project_name)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_cost_estimates_calculated ON cost_estimates(calculated_at)');
 }
 
 /**
@@ -128,6 +151,14 @@ export function enrichEvent(event: HookEvent): void {
 
   // Upsert project
   upsertProject(projectName, cwd, branch, now);
+
+  // Track costs for this event
+  try {
+    const { input, output } = estimateTokensFromEvent(event);
+    updateCostEstimate(sessionId, event.source_app, projectName, modelName, input, output);
+  } catch (error) {
+    console.error('[Costs] Error tracking event costs:', error);
+  }
 
   // Handle session lifecycle
   switch (event.hook_event_type) {

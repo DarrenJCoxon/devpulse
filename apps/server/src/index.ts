@@ -11,6 +11,7 @@ import {
 } from './theme';
 import { initVercelPoller } from './vercel';
 import { initSummaries, getDailySummary, getWeeklySummary } from './summaries';
+import { getCostsByProject, getCostsBySession, getDailyCosts } from './costs';
 
 // Initialize database and enricher
 initDatabase();
@@ -307,6 +308,63 @@ const server = Bun.serve({
           return new Response(JSON.stringify(summary), { headers: jsonHeaders });
         }
       } catch (error: any) {
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
+    }
+
+    // GET /api/costs - Get cost estimates (E4-S2)
+    if (url.pathname === '/api/costs' && req.method === 'GET') {
+      const group = url.searchParams.get('group');
+
+      if (!group) {
+        return new Response(JSON.stringify({ error: 'Missing group parameter. Must be "project", "session", or "daily"' }), {
+          status: 400, headers: jsonHeaders
+        });
+      }
+
+      try {
+        if (group === 'project') {
+          // Optional date range
+          const startDate = url.searchParams.get('startDate');
+          const endDate = url.searchParams.get('endDate');
+
+          const costs = getCostsByProject(
+            startDate ? parseInt(startDate) : undefined,
+            endDate ? parseInt(endDate) : undefined
+          );
+
+          return new Response(JSON.stringify(costs), { headers: jsonHeaders });
+        } else if (group === 'session') {
+          const project = url.searchParams.get('project');
+          if (!project) {
+            return new Response(JSON.stringify({ error: 'Missing project parameter for session grouping' }), {
+              status: 400, headers: jsonHeaders
+            });
+          }
+
+          const costs = getCostsBySession(project);
+          return new Response(JSON.stringify(costs), { headers: jsonHeaders });
+        } else if (group === 'daily') {
+          const daysParam = url.searchParams.get('days');
+          const days = daysParam ? parseInt(daysParam) : 7;
+
+          if (isNaN(days) || days < 1 || days > 365) {
+            return new Response(JSON.stringify({ error: 'Invalid days parameter. Must be between 1 and 365' }), {
+              status: 400, headers: jsonHeaders
+            });
+          }
+
+          const costs = getDailyCosts(days);
+          return new Response(JSON.stringify(costs), { headers: jsonHeaders });
+        } else {
+          return new Response(JSON.stringify({ error: 'Invalid group parameter. Must be "project", "session", or "daily"' }), {
+            status: 400, headers: jsonHeaders
+          });
+        }
+      } catch (error: any) {
+        console.error('[Costs API] Error:', error);
         return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
           status: 500, headers: jsonHeaders
         });

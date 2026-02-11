@@ -206,3 +206,38 @@ export interface DailyCost {
   total_cost_usd: number;
   projects: Record<string, number>; // project_name -> cost
 }
+
+// --- Agent Performance Metrics types (E4-S4) ---
+
+export interface SessionMetrics {
+  session_id: string;
+  source_app: string;
+  project_name: string;
+  model_name: string;
+  // Tool metrics
+  tool_use_count: number;
+  tool_failure_count: number;
+  tool_success_rate: number;       // 0-100 percentage
+  tool_breakdown: Record<string, { success: number; failure: number }>;
+  // Turn metrics
+  turn_count: number;
+  avg_turn_duration_seconds: number;
+  median_turn_duration_seconds: number;
+  min_turn_duration_seconds: number;
+  max_turn_duration_seconds: number;
+  // Activity metrics
+  total_events: number;
+  events_per_minute: number;
+  session_duration_minutes: number;
+  // Timeline (for sparkline)
+  activity_timeline: Array<{ minute: number; events: number }>;
+}
+
+export interface ProjectMetrics {
+  project_name: string;
+  session_count: number;
+  avg_tool_success_rate: number;
+  avg_turn_duration_seconds: number;
+  total_events: number;
+  total_duration_minutes: number;
+}

@@ -12,12 +12,14 @@ import {
 import { initVercelPoller } from './vercel';
 import { initSummaries, getDailySummary, getWeeklySummary } from './summaries';
 import { getCostsByProject, getCostsBySession, getDailyCosts } from './costs';
+import { initMetrics, getSessionMetrics, getProjectMetrics } from './metrics';
 
 // Initialize database and enricher
 initDatabase();
 initEnricher(getDb());
 initVercelPoller(getDb());
 initSummaries(getDb());
+initMetrics(getDb());
 
 // Mark idle sessions every 30 seconds
 setInterval(() => {
@@ -365,6 +367,73 @@ const server = Bun.serve({
         }
       } catch (error: any) {
         console.error('[Costs API] Error:', error);
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
+    }
+
+    // GET /api/metrics - Get agent performance metrics (E4-S4)
+    if (url.pathname === '/api/metrics' && req.method === 'GET') {
+      const group = url.searchParams.get('group');
+
+      if (!group) {
+        return new Response(JSON.stringify({ error: 'Missing group parameter. Must be "session" or "project"' }), {
+          status: 400, headers: jsonHeaders
+        });
+      }
+
+      try {
+        // Parse optional date range filters
+        const startParam = url.searchParams.get('start');
+        const endParam = url.searchParams.get('end');
+        const startTimestamp = startParam ? parseInt(startParam) : undefined;
+        const endTimestamp = endParam ? parseInt(endParam) : undefined;
+
+        if (group === 'session') {
+          const project = url.searchParams.get('project');
+          if (!project) {
+            return new Response(JSON.stringify({ error: 'Missing project parameter for session grouping' }), {
+              status: 400, headers: jsonHeaders
+            });
+          }
+
+          // Get all sessions for the project, filtered by date range
+          let sql = 'SELECT session_id, source_app FROM sessions WHERE project_name = ?';
+          const params: any[] = [project];
+
+          if (startTimestamp !== undefined) {
+            sql += ' AND started_at >= ?';
+            params.push(startTimestamp);
+          }
+
+          if (endTimestamp !== undefined) {
+            sql += ' AND started_at <= ?';
+            params.push(endTimestamp);
+          }
+
+          const sessionsStmt = getDb().prepare(sql);
+          const sessionRows = sessionsStmt.all(...params) as any[];
+
+          // Compute metrics for each session
+          const sessionMetrics = sessionRows
+            .map(row => getSessionMetrics(row.session_id, row.source_app, startTimestamp, endTimestamp))
+            .filter(m => m !== null);
+
+          return new Response(JSON.stringify(sessionMetrics), { headers: jsonHeaders });
+        } else if (group === 'project') {
+          // Optional project filter
+          const project = url.searchParams.get('project');
+          const projectMetrics = getProjectMetrics(project || undefined, startTimestamp, endTimestamp);
+
+          return new Response(JSON.stringify(projectMetrics), { headers: jsonHeaders });
+        } else {
+          return new Response(JSON.stringify({ error: 'Invalid group parameter. Must be "session" or "project"' }), {
+            status: 400, headers: jsonHeaders
+          });
+        }
+      } catch (error: any) {
+        console.error('[Metrics API] Error:', error);
         return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
           status: 500, headers: jsonHeaders
         });

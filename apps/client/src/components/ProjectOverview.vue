@@ -20,7 +20,53 @@
           <span class="text-lg">📁</span>
           <h3 class="text-base font-semibold text-[var(--theme-text-primary)]">{{ project.name }}</h3>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-3">
+          <!-- Health Ring (E5-S4) -->
+          <div
+            v-if="project.health"
+            class="relative group cursor-help"
+            :title="healthTooltip(project)"
+          >
+            <HealthRing
+              :score="project.health.score"
+              :trend="project.health.trend"
+              :size="40"
+              class="md:block hidden"
+            />
+            <HealthRing
+              :score="project.health.score"
+              :trend="project.health.trend"
+              :size="32"
+              class="md:hidden"
+            />
+            <!-- Tooltip on hover -->
+            <div class="absolute hidden group-hover:block z-10 w-56 p-3 rounded-lg shadow-lg bg-[var(--theme-bg-secondary)] border border-[var(--theme-border-primary)] left-1/2 -translate-x-1/2 bottom-full mb-2 pointer-events-none">
+              <div class="text-xs space-y-1.5">
+                <div class="font-semibold text-[var(--theme-text-primary)] pb-1 border-b border-[var(--theme-border-secondary)]">
+                  Health Score Breakdown
+                </div>
+                <div class="flex justify-between text-[var(--theme-text-secondary)]">
+                  <span>Test Status (40%):</span>
+                  <span class="font-medium">{{ project.health.testScore }}</span>
+                </div>
+                <div class="flex justify-between text-[var(--theme-text-secondary)]">
+                  <span>Activity (30%):</span>
+                  <span class="font-medium">{{ project.health.activityScore }}</span>
+                </div>
+                <div class="flex justify-between text-[var(--theme-text-secondary)]">
+                  <span>Error Rate (30%):</span>
+                  <span class="font-medium">{{ project.health.errorRateScore }}</span>
+                </div>
+                <div class="flex justify-between text-[var(--theme-text-primary)] font-semibold pt-1 border-t border-[var(--theme-border-secondary)]">
+                  <span>Overall:</span>
+                  <span>{{ project.health.score }}</span>
+                </div>
+              </div>
+              <!-- Tooltip arrow -->
+              <div class="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-[var(--theme-border-primary)]"></div>
+            </div>
+          </div>
+
           <!-- Active sessions badge -->
           <span
             v-if="project.active_sessions > 0"
@@ -169,6 +215,7 @@
 
 <script setup lang="ts">
 import type { Project, Session } from '../types';
+import HealthRing from './HealthRing.vue';
 
 const props = defineProps<{
   projects: Project[];
@@ -382,5 +429,13 @@ function compactionTooltip(session: Session): string {
   }
 
   return parts.join(' | ');
+}
+
+// --- Health Score Functions (E5-S4) ---
+
+function healthTooltip(project: Project): string {
+  if (!project.health) return 'Health data unavailable';
+
+  return `Health: ${project.health.score}/100 | Test: ${project.health.testScore} | Activity: ${project.health.activityScore} | Errors: ${project.health.errorRateScore}`;
 }
 </script>

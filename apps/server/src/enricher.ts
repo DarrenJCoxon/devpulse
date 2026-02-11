@@ -51,6 +51,13 @@ export function initEnricher(database: Database): void {
     // Column already exists, ignore
   }
 
+  // Migration: Add health column if it doesn't exist (E5-S4)
+  try {
+    db.exec(`ALTER TABLE projects ADD COLUMN health TEXT DEFAULT '{}'`);
+  } catch {
+    // Column already exists, ignore
+  }
+
   // Create sessions table
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -170,6 +177,124 @@ export function initEnricher(database: Database): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_cost_estimates_calculated ON cost_estimates(calculated_at)');
 }
 
+// --- Project Health types and functions (E5-S4) ---
+
+export interface ProjectHealth {
+  score: number;           // 0-100
+  testScore: number;       // 0-100
+  activityScore: number;   // 0-100
+  errorRateScore: number;  // 0-100
+  trend: 'improving' | 'declining' | 'stable';
+  previousScore: number;
+}
+
+/**
+ * Calculate project health score from test status, session activity, and error rate.
+ * Returns a score from 0-100 with component scores and trend.
+ */
+export function calculateProjectHealth(projectName: string): ProjectHealth {
+  const now = Date.now();
+  const thirtyMinutesAgo = now - 1800000; // 30 minutes
+
+  // Get project data
+  const project = db.prepare('SELECT test_status, health FROM projects WHERE name = ?').get(projectName) as any;
+
+  if (!project) {
+    return {
+      score: 50,
+      testScore: 50,
+      activityScore: 30,
+      errorRateScore: 100,
+      trend: 'stable',
+      previousScore: 50
+    };
+  }
+
+  // 1. Test Status Score (40% weight)
+  let testScore = 50; // unknown default
+  switch (project.test_status) {
+    case 'passing':
+      testScore = 100;
+      break;
+    case 'failing':
+      testScore = 0;
+      break;
+    default:
+      testScore = 50;
+  }
+
+  // 2. Session Activity Score (30% weight)
+  const sessionCounts = db.prepare(`
+    SELECT
+      COUNT(CASE WHEN status = 'active' THEN 1 END) as active,
+      COUNT(CASE WHEN status = 'idle' THEN 1 END) as idle,
+      COUNT(*) as total
+    FROM sessions
+    WHERE project_name = ? AND status IN ('active', 'idle', 'waiting')
+  `).get(projectName) as any;
+
+  let activityScore = 30; // no sessions default
+  if (sessionCounts.active > 0) {
+    activityScore = 100;
+  } else if (sessionCounts.idle > 0) {
+    activityScore = 60;
+  } else {
+    activityScore = 30;
+  }
+
+  // 3. Error Rate Score (30% weight)
+  // Query tool use events in the last 30 minutes
+  const errorStats = db.prepare(`
+    SELECT
+      COUNT(CASE WHEN hook_event_type = 'PostToolUseFailure' THEN 1 END) as failures,
+      COUNT(CASE WHEN hook_event_type IN ('PostToolUse', 'PostToolUseFailure') THEN 1 END) as total
+    FROM events
+    WHERE source_app = ? AND timestamp > ?
+  `).get(projectName, thirtyMinutesAgo) as any;
+
+  let errorRateScore = 100; // default: no errors
+  if (errorStats.total > 0) {
+    const errorRate = errorStats.failures / errorStats.total;
+    // 0% errors = 100 score, 50% errors = 50 score, 100% errors = 0 score
+    errorRateScore = Math.max(0, Math.round(100 - (errorRate * 100)));
+  }
+
+  // Calculate weighted score
+  const score = Math.round(
+    testScore * 0.4 +
+    activityScore * 0.3 +
+    errorRateScore * 0.3
+  );
+
+  // Determine trend based on previous score
+  let previousScore = score;
+  let trend: 'improving' | 'declining' | 'stable' = 'stable';
+
+  try {
+    const previousHealth = JSON.parse(project.health || '{}');
+    if (previousHealth.score !== undefined) {
+      previousScore = previousHealth.score;
+      const diff = score - previousScore;
+      if (diff > 5) {
+        trend = 'improving';
+      } else if (diff < -5) {
+        trend = 'declining';
+      }
+    }
+  } catch {
+    // Failed to parse previous health, use defaults
+  }
+
+  return {
+    score,
+    testScore,
+    activityScore,
+    errorRateScore,
+    trend,
+    previousScore
+  };
+}
+
 /**
  * Process an incoming hook event and update project/session state.
  * Called on every event received by the server.
@@ -259,6 +384,15 @@ export function enrichEvent(event: HookEvent): void {
       // Update topology last_event_at for any active topology node
       updateTopologyActivity(sessionId, event.source_app, now);
       break;
+  }
+
+  // Calculate and update health score for this project (E5-S4)
+  try {
+    const health = calculateProjectHealth(projectName);
+    db.prepare('UPDATE projects SET health = ?, updated_at = ? WHERE name = ?')
+      .run(JSON.stringify(health), now, projectName);
+  } catch (error) {
+    console.error('[Health] Error calculating project health:', error);
   }
 }
 
@@ -726,11 +860,35 @@ function trackFileAccessFromEvent(event: HookEvent, projectName: string): void {
 // --- Query functions for API ---
 
 export function getAllProjects(): Project[] {
-  return db.prepare('SELECT * FROM projects ORDER BY last_activity DESC').all() as Project[];
+  const projects = db.prepare(`
+    SELECT id, name, path, current_branch, active_sessions, last_activity,
+           test_status, test_summary, dev_servers, deployment_status, health,
+           created_at, updated_at
+    FROM projects
+    ORDER BY last_activity DESC
+  `).all() as any[];
+
+  // Parse health JSON for each project
+  return projects.map(p => ({
+    ...p,
+    health: p.health ? JSON.parse(p.health) : undefined
+  })) as Project[];
 }
 
 export function getProjectByName(name: string): Project | null {
-  return db.prepare('SELECT * FROM projects WHERE name = ?').get(name) as Project | null;
+  const project = db.prepare(`
+    SELECT id, name, path, current_branch, active_sessions, last_activity,
+           test_status, test_summary, dev_servers, deployment_status, health,
+           created_at, updated_at
+    FROM projects
+    WHERE name = ?
+  `).get(name) as any;
+  if (!project) return null;
+
+  return {
+    ...project,
+    health: project.health ? JSON.parse(project.health) : undefined
+  } as Project;
 }
 
 export function getActiveSessions(): Session[] {
@@ -785,6 +943,14 @@ export function markIdleSessions(): void {
 
   for (const row of affected) {
     updateProjectSessionCount(row.project_name);
+    // Recalculate health for affected projects (E5-S4)
+    try {
+      const health = calculateProjectHealth(row.project_name);
+      db.prepare('UPDATE projects SET health = ?, updated_at = ? WHERE name = ?')
+        .run(JSON.stringify(health), Date.now(), row.project_name);
+    } catch (error) {
+      console.error('[Health] Error recalculating project health:', error);
+    }
   }
 }
 

@@ -53,6 +53,15 @@ export interface FilterOptions {
 export type SessionStatus = 'active' | 'idle' | 'waiting' | 'stopped';
 export type TestStatus = 'passing' | 'failing' | 'unknown';
 
+export interface ProjectHealth {
+  score: number;           // 0-100
+  testScore: number;       // 0-100
+  activityScore: number;   // 0-100
+  errorRateScore: number;  // 0-100
+  trend: 'improving' | 'declining' | 'stable';
+  previousScore: number;
+}
+
 export interface Project {
   id?: number;
   name: string;
@@ -64,6 +73,7 @@ export interface Project {
   test_summary: string;
   dev_servers: string;        // JSON array of {port, type}
   deployment_status: string;  // JSON string: {state, url, commit_message, created, vercel_project_id}
+  health?: ProjectHealth;     // E5-S4: Health score and components
   created_at: number;
   updated_at: number;
 }

@@ -11,6 +11,7 @@
 
 import { Database } from 'bun:sqlite';
 import type { HookEvent, Project, Session, SessionStatus, TestStatus, DevLog, ProjectStatus } from './types';
+import { parseBranchToTask } from './branch-parser';
 
 let db: Database;
 
@@ -29,10 +30,18 @@ export function initEnricher(database: Database): void {
       test_status TEXT DEFAULT 'unknown',
       test_summary TEXT DEFAULT '',
       dev_servers TEXT DEFAULT '[]',
+      deployment_status TEXT DEFAULT '',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )
   `);
+
+  // Migration: Add deployment_status column if it doesn't exist (safe for existing databases)
+  try {
+    db.exec(`ALTER TABLE projects ADD COLUMN deployment_status TEXT DEFAULT ''`);
+  } catch {
+    // Column already exists, ignore
+  }
 
   // Create sessions table
   db.exec(`
@@ -51,6 +60,13 @@ export function initEnricher(database: Database): void {
       UNIQUE(session_id, source_app)
     )
   `);
+
+  // Migration: Add task_context column if it doesn't exist (safe for existing databases)
+  try {
+    db.exec(`ALTER TABLE sessions ADD COLUMN task_context TEXT DEFAULT ''`);
+  } catch {
+    // Column already exists, ignore
+  }
 
   // Create dev_logs table
   db.exec(`
@@ -162,8 +178,8 @@ function upsertProject(name: string, path: string, branch: string, now: number):
     db.prepare(`UPDATE projects SET ${updates.join(', ')} WHERE name = ?`).run(...params);
   } else {
     db.prepare(`
-      INSERT INTO projects (name, path, current_branch, active_sessions, last_activity, test_status, test_summary, dev_servers, created_at, updated_at)
-      VALUES (?, ?, ?, 0, ?, 'unknown', '', '[]', ?, ?)
+      INSERT INTO projects (name, path, current_branch, active_sessions, last_activity, test_status, test_summary, dev_servers, deployment_status, created_at, updated_at)
+      VALUES (?, ?, ?, 0, ?, 'unknown', '', '[]', '', ?, ?)
     `).run(name, path || '', branch || 'main', now, now, now);
   }
 }
@@ -187,18 +203,24 @@ function upsertSession(
     'SELECT id FROM sessions WHERE session_id = ? AND source_app = ?'
   ).get(sessionId, sourceApp) as any;
 
+  // Parse branch name into task context
+  const normalizedBranch = branch || 'main';
+  const taskContext = parseBranchToTask(normalizedBranch);
+  const taskContextJson = JSON.stringify(taskContext);
+
   if (existing) {
     db.prepare(`
       UPDATE sessions SET status = ?, current_branch = ?, last_event_at = ?,
         model_name = CASE WHEN ? != '' THEN ? ELSE model_name END,
-        cwd = CASE WHEN ? != '' THEN ? ELSE cwd END
+        cwd = CASE WHEN ? != '' THEN ? ELSE cwd END,
+        task_context = ?
       WHERE session_id = ? AND source_app = ?
-    `).run(status, branch || 'main', now, modelName, modelName, cwd, cwd, sessionId, sourceApp);
+    `).run(status, normalizedBranch, now, modelName, modelName, cwd, cwd, taskContextJson, sessionId, sourceApp);
   } else {
     db.prepare(`
-      INSERT INTO sessions (session_id, project_name, source_app, status, current_branch, started_at, last_event_at, event_count, model_name, cwd)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-    `).run(sessionId, projectName, sourceApp, status, branch || 'main', now, now, modelName, cwd);
+      INSERT INTO sessions (session_id, project_name, source_app, status, current_branch, started_at, last_event_at, event_count, model_name, cwd, task_context)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+    `).run(sessionId, projectName, sourceApp, status, normalizedBranch, now, now, modelName, cwd, taskContextJson);
   }
 }
 

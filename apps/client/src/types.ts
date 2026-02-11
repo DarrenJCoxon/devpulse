@@ -62,6 +62,7 @@ export interface Project {
   test_status: TestStatus;
   test_summary: string;
   dev_servers: string;        // JSON array of {port, type}
+  deployment_status: string;  // JSON string: {state, url, commit_message, created, vercel_project_id}
   created_at: number;
   updated_at: number;
 }
@@ -78,6 +79,7 @@ export interface Session {
   event_count: number;
   model_name: string;
   cwd: string;
+  task_context: string;  // JSON string of TaskContext (from server branch-parser)
 }
 
 export interface DevLog {
@@ -121,4 +123,40 @@ export interface ChartConfig {
     axis: string;
     text: string;
   };
+}
+
+// --- Summary types (E3-S3) ---
+
+export interface PeriodSummary {
+  period: 'daily' | 'weekly';
+  start_date: string;      // ISO date: "2026-02-11"
+  end_date: string;        // ISO date: "2026-02-11" (daily) or "2026-02-17" (weekly)
+  projects: ProjectSummary[];
+  totals: SummaryTotals;
+}
+
+export interface ProjectSummary {
+  project_name: string;
+  session_count: number;
+  total_duration_minutes: number;
+  files_changed: string[];   // Deduplicated across sessions
+  commit_count: number;
+  commits: string[];         // Commit messages
+  tool_breakdown: Record<string, number>;  // Aggregated across sessions
+  dev_logs: DevLog[];        // The raw dev log entries
+}
+
+export interface SummaryTotals {
+  total_sessions: number;
+  total_duration_minutes: number;
+  total_files_changed: number;
+  total_commits: number;
+  active_projects: number;
+}
+
+// --- Notification types (E3-S4) ---
+
+export interface NotificationSettings {
+  enabled: boolean;
+  types: string[];
 }

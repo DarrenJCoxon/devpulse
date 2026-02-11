@@ -76,6 +76,27 @@
           </div>
         </div>
 
+        <!-- Deployment status -->
+        <div v-if="parsedDeployment(project)" class="flex items-center gap-2 text-sm">
+          <span>🚀</span>
+          <a
+            :href="'https://' + parsedDeployment(project)!.url"
+            target="_blank"
+            class="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded transition-colors"
+            :class="deploymentBadgeClass(parsedDeployment(project)!.state)"
+          >
+            <span
+              class="w-2 h-2 rounded-full"
+              :class="deploymentDotClass(parsedDeployment(project)!.state)"
+            ></span>
+            <span>{{ deploymentStateText(parsedDeployment(project)!.state) }}</span>
+            <span class="text-[var(--theme-text-quaternary)]">{{ deploymentTimeAgo(parsedDeployment(project)!.created) }}</span>
+          </a>
+        </div>
+        <div v-if="parsedDeployment(project) && parsedDeployment(project)!.commit_message" class="text-xs text-[var(--theme-text-tertiary)] pl-6 -mt-1">
+          {{ parsedDeployment(project)!.commit_message }}
+        </div>
+
         <!-- Sessions list -->
         <div v-if="projectSessions(project.name).length > 0" class="mt-2">
           <div class="text-xs text-[var(--theme-text-tertiary)] mb-1.5 font-medium uppercase tracking-wide">Sessions</div>
@@ -83,29 +104,40 @@
             <div
               v-for="session in projectSessions(project.name)"
               :key="session.session_id"
-              class="flex items-center justify-between text-xs bg-[var(--theme-bg-tertiary)] rounded px-2 py-1.5 transition-opacity duration-300"
+              class="bg-[var(--theme-bg-tertiary)] rounded px-2 py-1.5 transition-opacity duration-300 space-y-1"
               :class="{ 'opacity-50': session.status === 'idle' || session.status === 'stopped' }"
             >
-              <div class="flex items-center gap-1.5">
-                <span
-                  class="w-2 h-2 rounded-full transition-colors duration-300"
-                  :class="{
-                    'bg-green-500': session.status === 'active',
-                    'bg-yellow-500': session.status === 'waiting',
-                    'bg-gray-400': session.status === 'idle',
-                    'bg-red-400': session.status === 'stopped'
-                  }"
-                ></span>
-                <span class="font-mono text-[var(--theme-text-secondary)]">
-                  {{ session.session_id.slice(0, 8) }}
-                </span>
+              <div class="flex items-center justify-between text-xs">
+                <div class="flex items-center gap-1.5">
+                  <span
+                    class="w-2 h-2 rounded-full transition-colors duration-300"
+                    :class="{
+                      'bg-green-500': session.status === 'active',
+                      'bg-yellow-500': session.status === 'waiting',
+                      'bg-gray-400': session.status === 'idle',
+                      'bg-red-400': session.status === 'stopped'
+                    }"
+                  ></span>
+                  <span class="font-mono text-[var(--theme-text-secondary)]">
+                    {{ session.session_id.slice(0, 8) }}
+                  </span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[var(--theme-text-quaternary)]">
+                    {{ session.model_name ? session.model_name.split('-').slice(0, 2).join('-') : '' }}
+                  </span>
+                  <span class="text-[var(--theme-text-quaternary)]">
+                    {{ timeAgo(session.last_event_at) }}
+                  </span>
+                </div>
               </div>
-              <div class="flex items-center gap-2">
-                <span class="text-[var(--theme-text-quaternary)]">
-                  {{ session.model_name ? session.model_name.split('-').slice(0, 2).join('-') : '' }}
-                </span>
-                <span class="text-[var(--theme-text-quaternary)]">
-                  {{ timeAgo(session.last_event_at) }}
+              <!-- Task context badge -->
+              <div v-if="parseTaskContext(session).display" class="flex items-center gap-1.5 text-xs">
+                <span
+                  class="px-2 py-0.5 rounded font-medium"
+                  :class="taskBadgeClass(parseTaskContext(session).prefix)"
+                >
+                  {{ parseTaskContext(session).display }}
                 </span>
               </div>
             </div>
@@ -165,5 +197,129 @@ function timeAgo(timestamp: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
   return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+interface DeploymentStatus {
+  state: string;
+  url: string;
+  commit_message: string;
+  created: number;
+  vercel_project_id: string;
+}
+
+function parsedDeployment(project: Project): DeploymentStatus | null {
+  if (!project.deployment_status) return null;
+  try {
+    return JSON.parse(project.deployment_status);
+  } catch {
+    return null;
+  }
+}
+
+function deploymentStateText(state: string): string {
+  switch (state) {
+    case 'BUILDING': return 'Building';
+    case 'READY': return 'Ready';
+    case 'ERROR': return 'Error';
+    case 'QUEUED': return 'Queued';
+    case 'CANCELED': return 'Canceled';
+    default: return state;
+  }
+}
+
+function deploymentBadgeClass(state: string): string {
+  switch (state) {
+    case 'READY':
+      return 'bg-green-50 text-green-700 hover:bg-green-100';
+    case 'BUILDING':
+      return 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100 animate-pulse';
+    case 'ERROR':
+      return 'bg-red-50 text-red-700 hover:bg-red-100';
+    case 'QUEUED':
+      return 'bg-gray-100 text-gray-600 hover:bg-gray-200';
+    case 'CANCELED':
+      return 'bg-gray-100 text-gray-500 hover:bg-gray-200';
+    default:
+      return 'bg-gray-100 text-gray-600 hover:bg-gray-200';
+  }
+}
+
+function deploymentDotClass(state: string): string {
+  switch (state) {
+    case 'READY':
+      return 'bg-green-500';
+    case 'BUILDING':
+      return 'bg-yellow-500 animate-pulse';
+    case 'ERROR':
+      return 'bg-red-500';
+    case 'QUEUED':
+      return 'bg-gray-400';
+    case 'CANCELED':
+      return 'bg-gray-400';
+    default:
+      return 'bg-gray-400';
+  }
+}
+
+function deploymentTimeAgo(created: number): string {
+  if (!created) return '';
+  const now = Date.now();
+  const seconds = Math.floor((now - created) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+interface TaskContext {
+  prefix: string;
+  ticket_id: string;
+  description: string;
+  display: string;
+}
+
+function parseTaskContext(session: Session): TaskContext {
+  // Default empty context if no task_context field
+  const defaultContext: TaskContext = {
+    prefix: '',
+    ticket_id: '',
+    description: session.current_branch || '',
+    display: ''
+  };
+
+  if (!session.task_context) {
+    return defaultContext;
+  }
+
+  try {
+    const parsed = JSON.parse(session.task_context);
+    return parsed as TaskContext;
+  } catch {
+    return defaultContext;
+  }
+}
+
+function taskBadgeClass(prefix: string): string {
+  switch (prefix) {
+    case 'feature':
+      return 'bg-green-50 text-green-700';
+    case 'fix':
+    case 'bugfix':
+      return 'bg-orange-50 text-orange-700';
+    case 'hotfix':
+      return 'bg-red-50 text-red-700';
+    case 'chore':
+      return 'bg-blue-50 text-blue-700';
+    case 'refactor':
+      return 'bg-purple-50 text-purple-700';
+    case 'release':
+      return 'bg-indigo-50 text-indigo-700';
+    case 'docs':
+      return 'bg-cyan-50 text-cyan-700';
+    case 'test':
+      return 'bg-teal-50 text-teal-700';
+    default:
+      return 'bg-gray-50 text-gray-700';
+  }
 }
 </script>

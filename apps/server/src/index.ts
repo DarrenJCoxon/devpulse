@@ -5,14 +5,18 @@ import {
   markIdleSessions, cleanupOldSessions, scanPorts
 } from './enricher';
 import type { HookEvent, HumanInTheLoopResponse } from './types';
-import { 
-  createTheme, updateThemeById, getThemeById, searchThemes, 
-  deleteThemeById, exportThemeById, importTheme, getThemeStats 
+import {
+  createTheme, updateThemeById, getThemeById, searchThemes,
+  deleteThemeById, exportThemeById, importTheme, getThemeStats
 } from './theme';
+import { initVercelPoller } from './vercel';
+import { initSummaries, getDailySummary, getWeeklySummary } from './summaries';
 
 // Initialize database and enricher
 initDatabase();
 initEnricher(getDb());
+initVercelPoller(getDb());
+initSummaries(getDb());
 
 // Mark idle sessions every 30 seconds
 setInterval(() => {
@@ -234,12 +238,67 @@ const server = Bun.serve({
     if (url.pathname === '/api/devlogs' && req.method === 'GET') {
       const limit = parseInt(url.searchParams.get('limit') || '50');
       const project = url.searchParams.get('project');
-      
-      const logs = project 
+
+      const logs = project
         ? getDevLogsForProject(project, limit)
         : getRecentDevLogs(limit);
-      
+
       return new Response(JSON.stringify(logs), { headers: jsonHeaders });
+    }
+
+    // GET /api/summaries - Get daily or weekly summaries
+    if (url.pathname === '/api/summaries' && req.method === 'GET') {
+      const period = url.searchParams.get('period');
+
+      // Validate period parameter
+      if (!period || !['daily', 'weekly'].includes(period)) {
+        return new Response(JSON.stringify({ error: 'Invalid period. Must be "daily" or "weekly"' }), {
+          status: 400, headers: jsonHeaders
+        });
+      }
+
+      try {
+        if (period === 'daily') {
+          const date = url.searchParams.get('date');
+          if (!date) {
+            return new Response(JSON.stringify({ error: 'Missing date parameter (YYYY-MM-DD)' }), {
+              status: 400, headers: jsonHeaders
+            });
+          }
+
+          // Validate date format
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+            return new Response(JSON.stringify({ error: 'Invalid date format. Expected YYYY-MM-DD' }), {
+              status: 400, headers: jsonHeaders
+            });
+          }
+
+          const summary = getDailySummary(date);
+          return new Response(JSON.stringify(summary), { headers: jsonHeaders });
+        } else {
+          // Weekly
+          const week = url.searchParams.get('week');
+          if (!week) {
+            return new Response(JSON.stringify({ error: 'Missing week parameter (YYYY-Www)' }), {
+              status: 400, headers: jsonHeaders
+            });
+          }
+
+          // Validate ISO week format
+          if (!/^\d{4}-W\d{2}$/.test(week)) {
+            return new Response(JSON.stringify({ error: 'Invalid week format. Expected YYYY-Www (e.g., 2026-W07)' }), {
+              status: 400, headers: jsonHeaders
+            });
+          }
+
+          const summary = getWeeklySummary(week);
+          return new Response(JSON.stringify(summary), { headers: jsonHeaders });
+        }
+      } catch (error: any) {
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
     }
 
     // =============================================

@@ -54,6 +54,20 @@
             <span class="text-2xl mobile:text-base">📊</span>
           </button>
 
+          <!-- Notification Bell Button -->
+          <button
+            @click="showNotificationSettings = !showNotificationSettings"
+            class="p-3 mobile:p-1 rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 border border-white/30 hover:border-white/50 backdrop-blur-sm shadow-lg hover:shadow-xl relative"
+            title="Notification settings"
+          >
+            <span class="text-2xl mobile:text-base">🔔</span>
+            <!-- Indicator dot when notifications are enabled -->
+            <span
+              v-if="notificationSettings.enabled"
+              class="absolute top-1 right-1 h-2 w-2 rounded-full bg-green-500 border border-white"
+            ></span>
+          </button>
+
           <!-- Theme Manager Button -->
           <button
             @click="handleThemeManagerClick"
@@ -140,6 +154,11 @@
       <DevLogTimeline :dev-logs="devLogs" />
     </div>
 
+    <!-- Summaries Tab -->
+    <div v-if="activeTab === 'summaries'" class="flex-1 overflow-auto">
+      <SummaryReport />
+    </div>
+
     <!-- Error message -->
     <div
       v-if="error"
@@ -152,6 +171,14 @@
     <ThemeManager
       :is-open="showThemeManager"
       @close="showThemeManager = false"
+    />
+
+    <!-- Notification Settings -->
+    <NotificationSettings
+      v-if="showNotificationSettings"
+      :settings="notificationSettings"
+      :request-permission="requestNotificationPermission"
+      @close="showNotificationSettings = false"
     />
 
     <!-- Toast Notifications -->
@@ -173,6 +200,7 @@ import { useWebSocket } from './composables/useWebSocket';
 import { useProjects } from './composables/useProjects';
 import { useThemes } from './composables/useThemes';
 import { useEventColors } from './composables/useEventColors';
+import { useNotifications } from './composables/useNotifications';
 import EventTimeline from './components/EventTimeline.vue';
 import FilterPanel from './components/FilterPanel.vue';
 import StickScrollButton from './components/StickScrollButton.vue';
@@ -182,6 +210,8 @@ import ToastNotification from './components/ToastNotification.vue';
 import AgentSwimLaneContainer from './components/AgentSwimLaneContainer.vue';
 import ProjectOverview from './components/ProjectOverview.vue';
 import DevLogTimeline from './components/DevLogTimeline.vue';
+import SummaryReport from './components/SummaryReport.vue';
+import NotificationSettings from './components/NotificationSettings.vue';
 import { WS_URL } from './config';
 
 // Tab navigation
@@ -189,8 +219,9 @@ const tabs = [
   { id: 'projects' as const, label: 'Projects' },
   { id: 'events' as const, label: 'Events' },
   { id: 'devlog' as const, label: 'Dev Log' },
+  { id: 'summaries' as const, label: 'Summaries' },
 ];
-const activeTab = ref<'projects' | 'events' | 'devlog'>('projects');
+const activeTab = ref<'projects' | 'events' | 'devlog' | 'summaries'>('projects');
 
 // WebSocket connection
 const { events, isConnected, error, clearEvents, projects, sessions } = useWebSocket(WS_URL);
@@ -204,6 +235,9 @@ useThemes();
 // Event colors
 const { getHexColorForApp } = useEventColors();
 
+// Notifications
+const { settings: notificationSettings, requestPermission: requestNotificationPermission } = useNotifications(events);
+
 // Filters
 const filters = ref({
   sourceApp: '',
@@ -215,6 +249,7 @@ const filters = ref({
 const stickToBottom = ref(true);
 const showThemeManager = ref(false);
 const showFilters = ref(false);
+const showNotificationSettings = ref(false);
 const uniqueAppNames = ref<string[]>([]); // Apps active in current time window
 const allAppNames = ref<string[]>([]); // All apps ever seen in session
 const selectedAgentLanes = ref<string[]>([]);

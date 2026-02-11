@@ -114,10 +114,13 @@ const headers = {
 
 const jsonHeaders = { ...headers, 'Content-Type': 'application/json' };
 
+// Server port constant
+const SERVER_PORT = parseInt(process.env.SERVER_PORT || '4000');
+
 // Create Bun server
 const server = Bun.serve({
-  port: parseInt(process.env.SERVER_PORT || '4000'),
-  
+  port: SERVER_PORT,
+
   async fetch(req: Request) {
     const url = new URL(req.url);
     
@@ -484,6 +487,65 @@ const server = Bun.serve({
       }
     }
 
+    // POST /api/validate-path - Validate project path (E5-S5)
+    if (url.pathname === '/api/validate-path' && req.method === 'POST') {
+      try {
+        const body = await req.json() as { path?: string };
+        const { path } = body;
+
+        if (!path) {
+          return new Response(JSON.stringify({ error: 'Missing path parameter' }), {
+            status: 400, headers: jsonHeaders
+          });
+        }
+
+        // Check if directory exists
+        const dirExists = await Bun.file(path).exists();
+        if (!dirExists) {
+          return new Response(JSON.stringify({
+            exists: false,
+            hasSettings: false,
+            isGitRepo: false,
+            suggestedName: ''
+          }), { headers: jsonHeaders });
+        }
+
+        // Check if .claude/settings.json exists
+        const settingsPath = `${path}/.claude/settings.json`;
+        const hasSettings = await Bun.file(settingsPath).exists();
+
+        // Check if it's a git repo
+        let isGitRepo = false;
+        try {
+          const gitProc = Bun.spawn(['git', 'rev-parse', '--git-dir'], {
+            cwd: path,
+            stdout: 'pipe',
+            stderr: 'pipe'
+          });
+          const exitCode = await gitProc.exited;
+          isGitRepo = exitCode === 0;
+        } catch {
+          isGitRepo = false;
+        }
+
+        // Suggest a name from directory basename
+        const pathParts = path.split('/').filter(Boolean);
+        const suggestedName = pathParts[pathParts.length - 1] || '';
+
+        return new Response(JSON.stringify({
+          exists: true,
+          hasSettings,
+          isGitRepo,
+          suggestedName
+        }), { headers: jsonHeaders });
+      } catch (error: any) {
+        console.error('[Validate Path API] Error:', error);
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
+    }
+
     // POST /api/conflicts/:id/dismiss - Dismiss a conflict (E4-S5)
     if (url.pathname.match(/^\/api\/conflicts\/[^\/]+\/dismiss$/) && req.method === 'POST') {
       try {
@@ -500,6 +562,111 @@ const server = Bun.serve({
         return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
           status: 500, headers: jsonHeaders
         });
+      }
+    }
+
+    // POST /api/install-hooks - Install hooks on a project (E5-S5)
+    if (url.pathname === '/api/install-hooks' && req.method === 'POST') {
+      try {
+        const body = await req.json() as { projectPath?: string; projectName?: string; serverUrl?: string };
+        const { projectPath, projectName, serverUrl } = body;
+
+        if (!projectPath || !projectName) {
+          return new Response(JSON.stringify({ error: 'Missing projectPath or projectName' }), {
+            status: 400, headers: jsonHeaders
+          });
+        }
+
+        // Verify directory exists
+        const dirExists = await Bun.file(projectPath).exists();
+        if (!dirExists) {
+          return new Response(JSON.stringify({
+            success: false,
+            output: '',
+            error: `Directory does not exist: ${projectPath}`
+          }), { status: 400, headers: jsonHeaders });
+        }
+
+        // Execute install-hooks.sh script
+        const scriptPath = './scripts/install-hooks.sh';
+        const finalServerUrl: string = serverUrl || `http://localhost:${SERVER_PORT}/events`;
+
+        const proc: ReturnType<typeof Bun.spawn> = Bun.spawn([
+          'bash', scriptPath,
+          projectPath,
+          projectName,
+          finalServerUrl
+        ], {
+          cwd: process.cwd(),
+          stdout: 'pipe',
+          stderr: 'pipe'
+        });
+
+        const stdout = await new Response(proc.stdout).text();
+        const stderr = await new Response(proc.stderr).text();
+        const exitCode: number = await proc.exited;
+
+        const success: boolean = exitCode === 0;
+        const output = stdout + (stderr ? '\n' + stderr : '');
+
+        return new Response(JSON.stringify({
+          success,
+          output,
+          error: success ? undefined : `Installation failed with exit code ${exitCode}`
+        }), { headers: jsonHeaders });
+      } catch (error: any) {
+        console.error('[Install Hooks API] Error:', error);
+        return new Response(JSON.stringify({
+          success: false,
+          output: '',
+          error: error.message || 'Internal server error'
+        }), { status: 500, headers: jsonHeaders });
+      }
+    }
+
+    // POST /api/test-hook - Send a test event (E5-S5)
+    if (url.pathname === '/api/test-hook' && req.method === 'POST') {
+      try {
+        const body = await req.json() as { projectName?: string };
+        const { projectName } = body;
+
+        if (!projectName) {
+          return new Response(JSON.stringify({ error: 'Missing projectName' }), {
+            status: 400, headers: jsonHeaders
+          });
+        }
+
+        // Create a synthetic test event
+        const testEvent: HookEvent = {
+          source_app: projectName,
+          session_id: 'test-' + Date.now(),
+          hook_event_type: 'TestHook',
+          payload: {
+            message: 'Test event from DevPulse Hook Wizard',
+            timestamp: Date.now()
+          },
+          timestamp: Date.now()
+        };
+
+        // Insert into database
+        const savedEvent = insertEvent(testEvent);
+
+        // Broadcast to WebSocket clients
+        const message = JSON.stringify({ type: 'event', data: savedEvent });
+        wsClients.forEach(client => {
+          try { client.send(message); } catch { wsClients.delete(client); }
+        });
+
+        return new Response(JSON.stringify({
+          success: true,
+          event: savedEvent
+        }), { headers: jsonHeaders });
+      } catch (error: any) {
+        console.error('[Test Hook API] Error:', error);
+        return new Response(JSON.stringify({
+          success: false,
+          error: error.message || 'Internal server error'
+        }), { status: 500, headers: jsonHeaders });
       }
     }
 
@@ -641,14 +808,9 @@ const server = Bun.serve({
     message(ws, message) {
       console.log('Received message:', message);
     },
-    
+
     close(ws) {
       console.log('WebSocket client disconnected');
-      wsClients.delete(ws);
-    },
-    
-    error(ws, error) {
-      console.error('WebSocket error:', error);
       wsClients.delete(ws);
     }
   }

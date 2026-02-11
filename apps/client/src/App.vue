@@ -151,7 +151,7 @@
 
     <!-- Projects Tab -->
     <div v-if="activeTab === 'projects'" class="flex-1 overflow-auto">
-      <ProjectOverview :projects="projects" :sessions="sessions" />
+      <ProjectOverview :projects="projects" :sessions="sessions" @add-project="showHookWizard = true" />
     </div>
 
     <!-- Events Tab -->
@@ -309,6 +309,12 @@
       @close="showConflictPanel = false"
       @dismiss="handleConflictDismiss"
     />
+
+    <!-- Hook Wizard (E5-S5) -->
+    <HookWizard
+      :is-open="showHookWizard"
+      @close="showHookWizard = false"
+    />
   </div>
 </template>
 
@@ -340,6 +346,7 @@ import CostDashboard from './components/CostDashboard.vue';
 import AgentMetrics from './components/AgentMetrics.vue';
 import ConflictPanel from './components/ConflictPanel.vue';
 import AlertBanner from './components/AlertBanner.vue';
+import HookWizard from './components/HookWizard.vue';
 import { WS_URL } from './config';
 
 // Tab navigation
@@ -389,6 +396,7 @@ const showFilters = ref(false);
 const showNotificationSettings = ref(false);
 const showConflictPanel = ref(false);
 const showAlertPanel = ref(false);
+const showHookWizard = ref(false);
 const uniqueAppNames = ref<string[]>([]); // Apps active in current time window
 const allAppNames = ref<string[]>([]); // All apps ever seen in session
 const selectedAgentLanes = ref<string[]>([]);

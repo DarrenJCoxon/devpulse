@@ -1,11 +1,26 @@
 <template>
-  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
-    <!-- No projects state -->
-    <div v-if="projects.length === 0" class="col-span-full flex flex-col items-center justify-center py-16 text-[var(--theme-text-tertiary)]">
-      <span class="text-4xl mb-3">📡</span>
-      <p class="text-lg font-medium">No projects detected yet</p>
-      <p class="text-sm mt-1">Start a Claude Code session with DevPulse hooks installed</p>
+  <div class="flex flex-col h-full">
+    <!-- Header with Add Project button -->
+    <div class="px-4 py-3 border-b border-[var(--theme-border-secondary)] flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-[var(--theme-text-primary)]">Projects</h2>
+      <button
+        @click="emit('add-project')"
+        class="px-4 py-2 rounded-lg bg-[var(--theme-primary)] text-white hover:bg-[var(--theme-primary-dark)] transition-colors text-sm font-medium flex items-center gap-2"
+      >
+        <span class="text-lg">+</span>
+        <span>Add Project</span>
+      </button>
     </div>
+
+    <!-- Projects grid -->
+    <div class="flex-1 overflow-y-auto">
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
+        <!-- No projects state -->
+        <div v-if="projects.length === 0" class="col-span-full flex flex-col items-center justify-center py-16 text-[var(--theme-text-tertiary)]">
+          <span class="text-4xl mb-3">📡</span>
+          <p class="text-lg font-medium">No projects detected yet</p>
+          <p class="text-sm mt-1">Click "Add Project" to install DevPulse hooks on a project</p>
+        </div>
 
     <!-- Project cards -->
     <div
@@ -210,6 +225,8 @@
         </div>
       </div>
     </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -220,6 +237,10 @@ import HealthRing from './HealthRing.vue';
 const props = defineProps<{
   projects: Project[];
   sessions: Session[];
+}>();
+
+const emit = defineEmits<{
+  (e: 'add-project'): void;
 }>();
 
 function parsedServers(project: Project): Array<{port: number; type: string}> {

@@ -3,5 +3,6 @@
 
 const SERVER_PORT = import.meta.env.VITE_API_PORT || '4000';
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || `http://localhost:${SERVER_PORT}`;
+export const API_URL = import.meta.env.VITE_API_URL || `http://localhost:${SERVER_PORT}`;
+export const API_BASE_URL = API_URL; // Alias for backward compatibility
 export const WS_URL = import.meta.env.VITE_WS_URL || `ws://localhost:${SERVER_PORT}/stream`;

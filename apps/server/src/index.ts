@@ -1,4 +1,4 @@
-import { initDatabase, getDb, insertEvent, getFilterOptions, getRecentEvents, updateEventHITLResponse } from './db';
+import { initDatabase, getDb, insertEvent, getFilterOptions, getRecentEvents, updateEventHITLResponse, getEventsForSession } from './db';
 import {
   initEnricher, enrichEvent, getAllProjects, getActiveSessions,
   getProjectStatus, getRecentDevLogs, getDevLogsForProject,
@@ -265,6 +265,21 @@ const server = Bun.serve({
         : getRecentDevLogs(limit);
 
       return new Response(JSON.stringify(logs), { headers: jsonHeaders });
+    }
+
+    // GET /api/sessions/:sessionId/events - Get all events for a session
+    if (url.pathname.match(/^\/api\/sessions\/[^\/]+\/events$/) && req.method === 'GET') {
+      const sessionId = decodeURIComponent(url.pathname.split('/')[3]);
+      const sourceApp = url.searchParams.get('source_app');
+
+      if (!sourceApp) {
+        return new Response(JSON.stringify({ error: 'Missing source_app query parameter' }), {
+          status: 400, headers: jsonHeaders
+        });
+      }
+
+      const events = getEventsForSession(sessionId, sourceApp);
+      return new Response(JSON.stringify(events), { headers: jsonHeaders });
     }
 
     // GET /api/topology - Get agent topology tree (E4-S1)

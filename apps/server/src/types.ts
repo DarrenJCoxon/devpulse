@@ -89,6 +89,7 @@ export interface Session {
 export interface DevLog {
   id?: number;
   session_id: string;
+  source_app: string;
   project_name: string;
   branch: string;
   summary: string;

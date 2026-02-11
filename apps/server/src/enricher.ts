@@ -98,6 +98,7 @@ export function initEnricher(database: Database): void {
     CREATE TABLE IF NOT EXISTS dev_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id TEXT NOT NULL,
+      source_app TEXT NOT NULL,
       project_name TEXT NOT NULL,
       branch TEXT DEFAULT '',
       summary TEXT DEFAULT '',
@@ -110,6 +111,17 @@ export function initEnricher(database: Database): void {
       tool_breakdown TEXT DEFAULT '{}'
     )
   `);
+
+  // Migrate existing dev_logs to add source_app column if needed
+  try {
+    const columns = db.prepare("PRAGMA table_info(dev_logs)").all() as any[];
+    const hasSourceAppColumn = columns.some((col: any) => col.name === 'source_app');
+    if (!hasSourceAppColumn) {
+      db.exec('ALTER TABLE dev_logs ADD COLUMN source_app TEXT NOT NULL DEFAULT ""');
+    }
+  } catch (error) {
+    // Table doesn't exist yet, CREATE TABLE above will handle it
+  }
 
   // Create agent_topology table (E4-S1)
   db.exec(`
@@ -514,10 +526,11 @@ function generateDevLog(sessionId: string, projectName: string, sourceApp: strin
   const durationMinutes = Math.round((now - startedAt) / 60000);
 
   db.prepare(`
-    INSERT INTO dev_logs (session_id, project_name, branch, summary, files_changed, commits, started_at, ended_at, duration_minutes, event_count, tool_breakdown)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO dev_logs (session_id, source_app, project_name, branch, summary, files_changed, commits, started_at, ended_at, duration_minutes, event_count, tool_breakdown)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     sessionId,
+    sourceApp,
     projectName,
     session.current_branch || 'main',
     summary,

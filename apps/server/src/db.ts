@@ -198,6 +198,31 @@ export function getRecentEvents(limit: number = 300): HookEvent[] {
   })).reverse();
 }
 
+export function getEventsForSession(sessionId: string, sourceApp: string): HookEvent[] {
+  const stmt = db.prepare(`
+    SELECT id, source_app, session_id, hook_event_type, payload, chat, summary, timestamp, humanInTheLoop, humanInTheLoopStatus, model_name
+    FROM events
+    WHERE session_id = ? AND source_app = ?
+    ORDER BY timestamp ASC
+  `);
+
+  const rows = stmt.all(sessionId, sourceApp) as any[];
+
+  return rows.map(row => ({
+    id: row.id,
+    source_app: row.source_app,
+    session_id: row.session_id,
+    hook_event_type: row.hook_event_type,
+    payload: JSON.parse(row.payload),
+    chat: row.chat ? JSON.parse(row.chat) : undefined,
+    summary: row.summary || undefined,
+    timestamp: row.timestamp,
+    humanInTheLoop: row.humanInTheLoop ? JSON.parse(row.humanInTheLoop) : undefined,
+    humanInTheLoopStatus: row.humanInTheLoopStatus ? JSON.parse(row.humanInTheLoopStatus) : undefined,
+    model_name: row.model_name || undefined
+  }));
+}
+
 // Theme database functions
 export function insertTheme(theme: Theme): Theme {
   const stmt = db.prepare(`

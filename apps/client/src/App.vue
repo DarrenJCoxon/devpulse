@@ -187,7 +187,17 @@
 
     <!-- Dev Log Tab -->
     <div v-if="activeTab === 'devlog'" class="flex-1 overflow-auto">
-      <DevLogTimeline :dev-logs="devLogs" />
+      <DevLogTimeline
+        v-if="!replaySession"
+        :dev-logs="devLogs"
+        @replay="handleReplay"
+      />
+      <SessionReplay
+        v-else
+        :session-id="replaySession.sessionId"
+        :source-app="replaySession.sourceApp"
+        @back="replaySession = null"
+      />
     </div>
 
     <!-- Summaries Tab -->
@@ -270,6 +280,7 @@ import AgentSwimLaneContainer from './components/AgentSwimLaneContainer.vue';
 import ProjectOverview from './components/ProjectOverview.vue';
 import AgentTopology from './components/AgentTopology.vue';
 import DevLogTimeline from './components/DevLogTimeline.vue';
+import SessionReplay from './components/SessionReplay.vue';
 import SummaryReport from './components/SummaryReport.vue';
 import NotificationSettings from './components/NotificationSettings.vue';
 import CostDashboard from './components/CostDashboard.vue';
@@ -324,6 +335,7 @@ const uniqueAppNames = ref<string[]>([]); // Apps active in current time window
 const allAppNames = ref<string[]>([]); // All apps ever seen in session
 const selectedAgentLanes = ref<string[]>([]);
 const currentTimeRange = ref<TimeRange>('1m'); // Current time range from LivePulseChart
+const replaySession = ref<{ sessionId: string; sourceApp: string } | null>(null);
 
 // Compute high severity conflict count
 const highSeverityConflictCount = computed(() => {
@@ -392,6 +404,11 @@ const handleThemeManagerClick = () => {
 const handleConflictDismiss = (id: string) => {
   // The dismiss is handled by ConflictPanel, WebSocket will update our conflicts ref
   console.log('Conflict dismissed:', id);
+};
+
+// Handle session replay
+const handleReplay = (payload: { sessionId: string; sourceApp: string }) => {
+  replaySession.value = payload;
 };
 
 // Register command palette actions

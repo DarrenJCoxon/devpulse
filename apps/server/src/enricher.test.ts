@@ -202,3 +202,148 @@ describe("enricher - task_context integration", () => {
     });
   });
 });
+
+// --- E4-S3: Context Window Health Monitor Tests ---
+
+describe("enricher - PreCompact handling (E4-S3)", () => {
+  let db: Database;
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    initEnricher(db);
+  });
+
+  test("PreCompact event increments compaction_count from 0 to 1", () => {
+    // Start a session
+    const startEvent: HookEvent = {
+      source_app: 'TestProject',
+      session_id: 'test-compact-1',
+      hook_event_type: 'SessionStart',
+      model_name: 'claude-opus-4-6',
+      timestamp: Date.now(),
+      payload: { cwd: '/test/path', branch: 'main' }
+    };
+    enrichEvent(startEvent);
+
+    // Send PreCompact event
+    const compactEvent: HookEvent = {
+      source_app: 'TestProject',
+      session_id: 'test-compact-1',
+      hook_event_type: 'PreCompact',
+      model_name: 'claude-opus-4-6',
+      timestamp: Date.now() + 1000,
+      payload: {}
+    };
+    enrichEvent(compactEvent);
+
+    const sessions = getSessionsForProject('TestProject');
+    expect(sessions.length).toBe(1);
+    expect(sessions[0]?.compaction_count).toBe(1);
+    expect(sessions[0]?.last_compaction_at).toBeGreaterThan(0);
+  });
+
+  test("PreCompact event appends timestamp to compaction_history array", () => {
+    // Start a session
+    const startEvent: HookEvent = {
+      source_app: 'TestProject',
+      session_id: 'test-compact-2',
+      hook_event_type: 'SessionStart',
+      model_name: 'claude-opus-4-6',
+      timestamp: Date.now(),
+      payload: { cwd: '/test/path', branch: 'main' }
+    };
+    enrichEvent(startEvent);
+
+    const beforeCompact = Date.now();
+
+    // Send PreCompact event
+    const compactEvent: HookEvent = {
+      source_app: 'TestProject',
+      session_id: 'test-compact-2',
+      hook_event_type: 'PreCompact',
+      model_name: 'claude-opus-4-6',
+      timestamp: Date.now(),
+      payload: {}
+    };
+    enrichEvent(compactEvent);
+
+    const afterCompact = Date.now();
+
+    const sessions = getSessionsForProject('TestProject');
+    expect(sessions.length).toBe(1);
+
+    const history = JSON.parse(sessions[0]?.compaction_history || '[]');
+    expect(history).toBeArray();
+    expect(history.length).toBe(1);
+    // Check that the timestamp is within a reasonable range (not exact due to timing)
+    expect(history[0]).toBeGreaterThanOrEqual(beforeCompact);
+    expect(history[0]).toBeLessThanOrEqual(afterCompact);
+  });
+
+  test("compaction_history is trimmed to last 20 entries when it exceeds 20", () => {
+    // Start a session
+    const startEvent: HookEvent = {
+      source_app: 'TestProject',
+      session_id: 'test-compact-3',
+      hook_event_type: 'SessionStart',
+      model_name: 'claude-opus-4-6',
+      timestamp: Date.now(),
+      payload: { cwd: '/test/path', branch: 'main' }
+    };
+    enrichEvent(startEvent);
+
+    // Send 25 PreCompact events
+    for (let i = 0; i < 25; i++) {
+      const compactEvent: HookEvent = {
+        source_app: 'TestProject',
+        session_id: 'test-compact-3',
+        hook_event_type: 'PreCompact',
+        model_name: 'claude-opus-4-6',
+        timestamp: Date.now() + (i * 1000),
+        payload: {}
+      };
+      enrichEvent(compactEvent);
+    }
+
+    const sessions = getSessionsForProject('TestProject');
+    expect(sessions.length).toBe(1);
+    expect(sessions[0]?.compaction_count).toBe(25);
+
+    const history = JSON.parse(sessions[0]?.compaction_history || '[]');
+    expect(history).toBeArray();
+    expect(history.length).toBe(20); // Should be trimmed to 20
+  });
+
+  test("multiple PreCompact events increment count correctly", () => {
+    // Start a session
+    const startEvent: HookEvent = {
+      source_app: 'TestProject',
+      session_id: 'test-compact-4',
+      hook_event_type: 'SessionStart',
+      model_name: 'claude-opus-4-6',
+      timestamp: Date.now(),
+      payload: { cwd: '/test/path', branch: 'main' }
+    };
+    enrichEvent(startEvent);
+
+    // Send 3 PreCompact events
+    for (let i = 0; i < 3; i++) {
+      const compactEvent: HookEvent = {
+        source_app: 'TestProject',
+        session_id: 'test-compact-4',
+        hook_event_type: 'PreCompact',
+        model_name: 'claude-opus-4-6',
+        timestamp: Date.now() + (i * 1000),
+        payload: {}
+      };
+      enrichEvent(compactEvent);
+    }
+
+    const sessions = getSessionsForProject('TestProject');
+    expect(sessions.length).toBe(1);
+    expect(sessions[0]?.compaction_count).toBe(3);
+
+    const history = JSON.parse(sessions[0]?.compaction_history || '[]');
+    expect(history.length).toBe(3);
+  });
+});

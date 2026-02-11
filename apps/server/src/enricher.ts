@@ -10,7 +10,7 @@
  */
 
 import { Database } from 'bun:sqlite';
-import type { HookEvent, Project, Session, SessionStatus, TestStatus, DevLog, ProjectStatus } from './types';
+import type { HookEvent, Project, Session, SessionStatus, TestStatus, DevLog, ProjectStatus, AgentNode } from './types';
 import { parseBranchToTask } from './branch-parser';
 import { initCosts, estimateTokensFromEvent, updateCostEstimate } from './costs';
 
@@ -68,6 +68,23 @@ export function initEnricher(database: Database): void {
   // Migration: Add task_context column if it doesn't exist (safe for existing databases)
   try {
     db.exec(`ALTER TABLE sessions ADD COLUMN task_context TEXT DEFAULT ''`);
+  } catch {
+    // Column already exists, ignore
+  }
+
+  // Migration: Add compaction tracking columns if they don't exist (E4-S3)
+  try {
+    db.exec(`ALTER TABLE sessions ADD COLUMN compaction_count INTEGER DEFAULT 0`);
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    db.exec(`ALTER TABLE sessions ADD COLUMN last_compaction_at INTEGER`);
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    db.exec(`ALTER TABLE sessions ADD COLUMN compaction_history TEXT DEFAULT '[]'`);
   } catch {
     // Column already exists, ignore
   }
@@ -208,6 +225,12 @@ export function enrichEvent(event: HookEvent): void {
 
     case 'SubagentStop':
       handleSubagentStop(event, now);
+      updateSessionActivity(sessionId, event.source_app, now);
+      break;
+
+    case 'PreCompact':
+      // Track context window compactions (E4-S3)
+      handlePreCompact(sessionId, event.source_app, now);
       updateSessionActivity(sessionId, event.source_app, now);
       break;
 
@@ -608,6 +631,48 @@ function updateTopologyActivity(sessionId: string, sourceApp: string, now: numbe
   } catch (error) {
     // Silently fail if agent doesn't exist in topology (not all sessions are subagents)
   }
+}
+
+// --- Compaction Tracking operations (E4-S3) ---
+
+/**
+ * Handle PreCompact event - track context window compactions.
+ * Increments compaction_count, sets last_compaction_at, and maintains
+ * compaction_history (last 20 timestamps).
+ */
+function handlePreCompact(sessionId: string, sourceApp: string, now: number): void {
+  // Get current session data
+  const session = db.prepare(
+    'SELECT compaction_history FROM sessions WHERE session_id = ? AND source_app = ?'
+  ).get(sessionId, sourceApp) as any;
+
+  if (!session) {
+    // Session doesn't exist yet, create it
+    upsertSession(sessionId, sourceApp, sourceApp, 'active', '', now, '', '');
+  }
+
+  // Parse compaction_history
+  let history: number[] = [];
+  try {
+    history = JSON.parse(session?.compaction_history || '[]');
+  } catch {
+    history = [];
+  }
+
+  // Append new timestamp and trim to last 20
+  history.push(now);
+  if (history.length > 20) {
+    history = history.slice(-20);
+  }
+
+  // Update session with incremented count, new last_compaction_at, and updated history
+  db.prepare(`
+    UPDATE sessions
+    SET compaction_count = compaction_count + 1,
+        last_compaction_at = ?,
+        compaction_history = ?
+    WHERE session_id = ? AND source_app = ?
+  `).run(now, JSON.stringify(history), sessionId, sourceApp);
 }
 
 // --- Query functions for API ---

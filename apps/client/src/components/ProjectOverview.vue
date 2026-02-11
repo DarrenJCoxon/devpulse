@@ -105,7 +105,10 @@
               v-for="session in projectSessions(project.name)"
               :key="session.session_id"
               class="bg-[var(--theme-bg-tertiary)] rounded px-2 py-1.5 transition-opacity duration-300 space-y-1"
-              :class="{ 'opacity-50': session.status === 'idle' || session.status === 'stopped' }"
+              :class="{
+                'opacity-50': session.status === 'idle' || session.status === 'stopped',
+                'ring-2 ring-red-400 ring-opacity-50': getCompactionHealth(session) === 'red'
+              }"
             >
               <div class="flex items-center justify-between text-xs">
                 <div class="flex items-center gap-1.5">
@@ -121,6 +124,17 @@
                   <span class="font-mono text-[var(--theme-text-secondary)]">
                     {{ session.session_id.slice(0, 8) }}
                   </span>
+                  <!-- Context health indicator (E4-S3) -->
+                  <span
+                    v-if="session.compaction_count > 0"
+                    :title="compactionTooltip(session)"
+                    class="w-2 h-2 rounded-full cursor-help transition-colors duration-300"
+                    :class="{
+                      'bg-green-500': getCompactionHealth(session) === 'green',
+                      'bg-yellow-500': getCompactionHealth(session) === 'yellow',
+                      'bg-red-500 animate-pulse': getCompactionHealth(session) === 'red'
+                    }"
+                  ></span>
                 </div>
                 <div class="flex items-center gap-2">
                   <span class="text-[var(--theme-text-quaternary)]">
@@ -321,5 +335,52 @@ function taskBadgeClass(prefix: string): string {
     default:
       return 'bg-gray-50 text-gray-700';
   }
+}
+
+// --- Context Window Health Functions (E4-S3) ---
+
+type CompactionHealth = 'green' | 'yellow' | 'red';
+
+function getCompactionHealth(session: Session): CompactionHealth {
+  if (!session.compaction_history) return 'green';
+
+  const tenMinutesAgo = Date.now() - 600000;
+  let history: number[] = [];
+
+  try {
+    history = JSON.parse(session.compaction_history);
+  } catch {
+    return 'green';
+  }
+
+  const recentCompactions = history.filter(ts => ts > tenMinutesAgo).length;
+
+  if (recentCompactions >= 3) return 'red';
+  if (recentCompactions >= 1) return 'yellow';
+  return 'green';
+}
+
+function compactionTooltip(session: Session): string {
+  const count = session.compaction_count || 0;
+  const lastAt = session.last_compaction_at;
+
+  if (count === 0) return 'No compactions yet';
+
+  const parts: string[] = [`Total: ${count} compaction${count !== 1 ? 's' : ''}`];
+
+  if (lastAt) {
+    const timeSince = timeAgo(lastAt);
+    parts.push(`Last: ${timeSince}`);
+  }
+
+  // Calculate frequency (compactions per hour)
+  const sessionDuration = Date.now() - session.started_at;
+  const hoursRunning = sessionDuration / (1000 * 60 * 60);
+  if (hoursRunning > 0) {
+    const frequency = count / hoursRunning;
+    parts.push(`Frequency: ${frequency.toFixed(1)}/hr`);
+  }
+
+  return parts.join(' | ');
 }
 </script>

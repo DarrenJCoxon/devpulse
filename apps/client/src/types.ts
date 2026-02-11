@@ -101,8 +101,8 @@ export interface DevLog {
 }
 
 export interface WebSocketMessage {
-  type: 'initial' | 'event' | 'hitl_response' | 'projects' | 'sessions' | 'topology';
-  data: HookEvent | HookEvent[] | HumanInTheLoopResponse | Project[] | Session[] | AgentNode[];
+  type: 'initial' | 'event' | 'hitl_response' | 'projects' | 'sessions' | 'topology' | 'conflicts';
+  data: HookEvent | HookEvent[] | HumanInTheLoopResponse | Project[] | Session[] | AgentNode[] | FileConflict[];
 }
 
 // --- Agent Topology types (E4-S1) ---
@@ -240,4 +240,20 @@ export interface ProjectMetrics {
   avg_turn_duration_seconds: number;
   total_events: number;
   total_duration_minutes: number;
+}
+
+// --- Cross-Project File Conflict types (E4-S5) ---
+
+export interface FileConflict {
+  id: string;
+  file_path: string;
+  severity: 'high' | 'medium' | 'low';
+  projects: Array<{
+    project_name: string;
+    agent_id: string;      // source_app:session_id (truncated to 8 chars)
+    access_type: 'read' | 'write';
+    last_access: number;
+  }>;
+  detected_at: number;
+  dismissed: boolean;
 }

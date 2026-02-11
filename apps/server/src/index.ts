@@ -2,7 +2,7 @@ import { initDatabase, getDb, insertEvent, getFilterOptions, getRecentEvents, up
 import {
   initEnricher, enrichEvent, getAllProjects, getActiveSessions,
   getProjectStatus, getRecentDevLogs, getDevLogsForProject,
-  markIdleSessions, cleanupOldSessions, scanPorts, getAgentTopology
+  markIdleSessions, cleanupOldSessions, cleanupOldFileAccessLogs, scanPorts, getAgentTopology
 } from './enricher';
 import type { HookEvent, HumanInTheLoopResponse } from './types';
 import {
@@ -13,6 +13,7 @@ import { initVercelPoller } from './vercel';
 import { initSummaries, getDailySummary, getWeeklySummary } from './summaries';
 import { getCostsByProject, getCostsBySession, getDailyCosts } from './costs';
 import { initMetrics, getSessionMetrics, getProjectMetrics } from './metrics';
+import { getActiveConflicts, dismissConflict, detectConflicts } from './conflicts';
 
 // Initialize database and enricher
 initDatabase();
@@ -28,7 +29,10 @@ setInterval(() => {
 }, 30000);
 
 // Cleanup old sessions every hour
-setInterval(() => cleanupOldSessions(), 3600000);
+setInterval(() => {
+  cleanupOldSessions();
+  cleanupOldFileAccessLogs();
+}, 3600000);
 
 // Scan ports for dev servers every 60 seconds
 setInterval(() => {
@@ -157,6 +161,15 @@ const server = Bun.serve({
         // Broadcast topology updates for SubagentStart/SubagentStop events
         if (event.hook_event_type === 'SubagentStart' || event.hook_event_type === 'SubagentStop') {
           broadcastTopology();
+        }
+
+        // Broadcast conflicts if file access event (E4-S5)
+        if (event.hook_event_type === 'PostToolUse') {
+          const payload = event.payload || {};
+          const toolName = payload.tool_name || '';
+          if (['Read', 'Write', 'Edit'].includes(toolName)) {
+            broadcastConflicts();
+          }
         }
         
         return new Response(JSON.stringify(savedEvent), { headers: jsonHeaders });
@@ -440,6 +453,39 @@ const server = Bun.serve({
       }
     }
 
+    // GET /api/conflicts - Get active conflicts (E4-S5)
+    if (url.pathname === '/api/conflicts' && req.method === 'GET') {
+      try {
+        const windowMinutes = parseInt(url.searchParams.get('window') || '30');
+        const conflicts = getActiveConflicts(windowMinutes);
+        return new Response(JSON.stringify(conflicts), { headers: jsonHeaders });
+      } catch (error: any) {
+        console.error('[Conflicts API] Error:', error);
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
+    }
+
+    // POST /api/conflicts/:id/dismiss - Dismiss a conflict (E4-S5)
+    if (url.pathname.match(/^\/api\/conflicts\/[^\/]+\/dismiss$/) && req.method === 'POST') {
+      try {
+        const id = url.pathname.split('/')[3];
+        if (!id) throw new Error('Conflict ID is required');
+        dismissConflict(decodeURIComponent(id));
+
+        // Broadcast updated conflicts to all clients
+        broadcastConflicts();
+
+        return new Response(JSON.stringify({ success: true }), { headers: jsonHeaders });
+      } catch (error: any) {
+        console.error('[Conflicts API] Error:', error);
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
+    }
+
     // =============================================
     // THEMES API (existing)
     // =============================================
@@ -565,6 +611,10 @@ const server = Bun.serve({
       // Send initial topology
       const topology = getAgentTopology();
       ws.send(JSON.stringify({ type: 'topology', data: topology }));
+
+      // Send initial conflicts (E4-S5)
+      const conflicts = getActiveConflicts();
+      ws.send(JSON.stringify({ type: 'conflicts', data: conflicts }));
     },
     
     message(ws, message) {
@@ -604,6 +654,20 @@ function broadcastProjects() {
 function broadcastTopology() {
   const topology = getAgentTopology();
   const message = JSON.stringify({ type: 'topology', data: topology });
+
+  wsClients.forEach(client => {
+    try {
+      client.send(message);
+    } catch {
+      wsClients.delete(client);
+    }
+  });
+}
+
+// Broadcast conflict updates to all clients (E4-S5)
+function broadcastConflicts() {
+  const conflicts = getActiveConflicts();
+  const message = JSON.stringify({ type: 'conflicts', data: conflicts });
 
   wsClients.forEach(client => {
     try {

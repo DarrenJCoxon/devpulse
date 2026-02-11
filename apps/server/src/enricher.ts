@@ -13,6 +13,7 @@ import { Database } from 'bun:sqlite';
 import type { HookEvent, Project, Session, SessionStatus, TestStatus, DevLog, ProjectStatus, AgentNode } from './types';
 import { parseBranchToTask } from './branch-parser';
 import { initCosts, estimateTokensFromEvent, updateCostEstimate } from './costs';
+import { initConflicts, trackFileAccess } from './conflicts';
 
 let db: Database;
 
@@ -21,6 +22,9 @@ export function initEnricher(database: Database): void {
 
   // Initialize cost tracking
   initCosts(database);
+
+  // Initialize conflict tracking
+  initConflicts(database);
 
   // Create projects table
   db.exec(`
@@ -212,6 +216,10 @@ export function enrichEvent(event: HookEvent): void {
       updateSessionActivity(sessionId, event.source_app, now);
       detectTestResults(event, projectName);
       detectDevServers(event, projectName);
+      // Track file access for conflict detection (E4-S5)
+      if (event.hook_event_type === 'PostToolUse') {
+        trackFileAccessFromEvent(event, projectName);
+      }
       break;
 
     case 'PostToolUseFailure':
@@ -675,6 +683,33 @@ function handlePreCompact(sessionId: string, sourceApp: string, now: number): vo
   `).run(now, JSON.stringify(history), sessionId, sourceApp);
 }
 
+// --- File Access Tracking (E4-S5) ---
+
+/**
+ * Track file access from PostToolUse events for conflict detection.
+ */
+function trackFileAccessFromEvent(event: HookEvent, projectName: string): void {
+  const payload = event.payload || {};
+  const toolName = payload.tool_name || '';
+
+  // Only track Read, Write, Edit tools
+  if (!['Read', 'Write', 'Edit'].includes(toolName)) return;
+
+  // Extract file path
+  const filePath = payload.tool_input?.file_path;
+  if (!filePath) return;
+
+  // Determine access type
+  const accessType = (toolName === 'Write' || toolName === 'Edit') ? 'write' : 'read';
+
+  // Track the access
+  try {
+    trackFileAccess(filePath, projectName, event.session_id, event.source_app, accessType);
+  } catch (error) {
+    console.error('[FileAccess] Error tracking file access:', error);
+  }
+}
+
 // --- Query functions for API ---
 
 export function getAllProjects(): Project[] {
@@ -746,6 +781,15 @@ export function markIdleSessions(): void {
 export function cleanupOldSessions(): void {
   const oneDayAgo = Date.now() - 86400000;
   db.prepare("DELETE FROM sessions WHERE status = 'stopped' AND last_event_at < ?").run(oneDayAgo);
+}
+
+/**
+ * Clean up old file access log entries and dismissed conflicts (older than 24 hours).
+ */
+export function cleanupOldFileAccessLogs(): void {
+  // Import and call the cleanup function from conflicts module
+  const { cleanupOldFileAccess } = require('./conflicts');
+  cleanupOldFileAccess();
 }
 
 /**

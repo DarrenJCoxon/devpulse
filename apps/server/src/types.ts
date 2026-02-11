@@ -336,3 +336,19 @@ export interface ApiResponse<T = any> {
   message?: string;
   validationErrors?: ThemeValidationError[];
 }
+
+// --- Cross-Project File Conflict types (E4-S5) ---
+
+export interface FileConflict {
+  id: string;
+  file_path: string;
+  severity: 'high' | 'medium' | 'low';
+  projects: Array<{
+    project_name: string;
+    agent_id: string;      // source_app:session_id (truncated to 8 chars)
+    access_type: 'read' | 'write';
+    last_access: number;
+  }>;
+  detected_at: number;
+  dismissed: boolean;
+}

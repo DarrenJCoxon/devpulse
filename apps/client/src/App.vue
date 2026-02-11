@@ -54,6 +54,29 @@
             <span class="text-2xl mobile:text-base">📊</span>
           </button>
 
+          <!-- Conflicts Button (E4-S5) -->
+          <button
+            @click="showConflictPanel = !showConflictPanel"
+            class="p-3 mobile:p-1 rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 border border-white/30 hover:border-white/50 backdrop-blur-sm shadow-lg hover:shadow-xl relative"
+            title="File conflicts"
+          >
+            <span class="text-2xl mobile:text-base">⚠️</span>
+            <!-- Badge for high-severity conflicts -->
+            <span
+              v-if="highSeverityConflictCount > 0"
+              class="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center border border-white animate-pulse"
+            >
+              {{ highSeverityConflictCount }}
+            </span>
+            <!-- Badge for any conflicts -->
+            <span
+              v-else-if="conflicts.length > 0"
+              class="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-yellow-500 text-white text-xs font-bold flex items-center justify-center border border-white"
+            >
+              {{ conflicts.length }}
+            </span>
+          </button>
+
           <!-- Notification Bell Button -->
           <button
             @click="showNotificationSettings = !showNotificationSettings"
@@ -205,11 +228,19 @@
       :agent-color="toast.agentColor"
       @dismiss="dismissToast(toast.id)"
     />
+
+    <!-- Conflict Panel (E4-S5) -->
+    <ConflictPanel
+      v-if="showConflictPanel"
+      :conflicts="conflicts"
+      @close="showConflictPanel = false"
+      @dismiss="handleConflictDismiss"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import type { TimeRange } from './types';
 import { useWebSocket } from './composables/useWebSocket';
 import { useProjects } from './composables/useProjects';
@@ -230,6 +261,7 @@ import SummaryReport from './components/SummaryReport.vue';
 import NotificationSettings from './components/NotificationSettings.vue';
 import CostDashboard from './components/CostDashboard.vue';
 import AgentMetrics from './components/AgentMetrics.vue';
+import ConflictPanel from './components/ConflictPanel.vue';
 import { WS_URL } from './config';
 
 // Tab navigation
@@ -245,7 +277,7 @@ const tabs = [
 const activeTab = ref<'projects' | 'events' | 'topology' | 'devlog' | 'summaries' | 'costs' | 'metrics'>('projects');
 
 // WebSocket connection
-const { events, isConnected, error, clearEvents, projects, sessions, topology } = useWebSocket(WS_URL);
+const { events, isConnected, error, clearEvents, projects, sessions, topology, conflicts } = useWebSocket(WS_URL);
 
 // Projects and dev logs
 const { devLogs } = useProjects(projects, sessions);
@@ -271,10 +303,16 @@ const stickToBottom = ref(true);
 const showThemeManager = ref(false);
 const showFilters = ref(false);
 const showNotificationSettings = ref(false);
+const showConflictPanel = ref(false);
 const uniqueAppNames = ref<string[]>([]); // Apps active in current time window
 const allAppNames = ref<string[]>([]); // All apps ever seen in session
 const selectedAgentLanes = ref<string[]>([]);
 const currentTimeRange = ref<TimeRange>('1m'); // Current time range from LivePulseChart
+
+// Compute high severity conflict count
+const highSeverityConflictCount = computed(() => {
+  return conflicts.value.filter(c => c.severity === 'high').length;
+});
 
 // Toast notifications
 interface Toast {
@@ -332,5 +370,11 @@ const handleClearClick = () => {
 const handleThemeManagerClick = () => {
   console.log('Theme manager button clicked!');
   showThemeManager.value = true;
+};
+
+// Handle conflict dismiss
+const handleConflictDismiss = (id: string) => {
+  // The dismiss is handled by ConflictPanel, WebSocket will update our conflicts ref
+  console.log('Conflict dismissed:', id);
 };
 </script>

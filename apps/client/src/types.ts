@@ -47,9 +47,57 @@ export interface FilterOptions {
   hook_event_types: string[];
 }
 
+// --- DevPulse types ---
+
+export type SessionStatus = 'active' | 'idle' | 'waiting' | 'stopped';
+export type TestStatus = 'passing' | 'failing' | 'unknown';
+
+export interface Project {
+  id?: number;
+  name: string;
+  path: string;
+  current_branch: string;
+  active_sessions: number;
+  last_activity: number;
+  test_status: TestStatus;
+  test_summary: string;
+  dev_servers: string;        // JSON array of {port, type}
+  created_at: number;
+  updated_at: number;
+}
+
+export interface Session {
+  id?: number;
+  session_id: string;
+  project_name: string;
+  source_app: string;
+  status: SessionStatus;
+  current_branch: string;
+  started_at: number;
+  last_event_at: number;
+  event_count: number;
+  model_name: string;
+  cwd: string;
+}
+
+export interface DevLog {
+  id?: number;
+  session_id: string;
+  project_name: string;
+  branch: string;
+  summary: string;
+  files_changed: string;     // JSON array
+  commits: string;           // JSON array
+  started_at: number;
+  ended_at: number;
+  duration_minutes: number;
+  event_count: number;
+  tool_breakdown: string;    // JSON object {"Read": 5, "Write": 12, ...}
+}
+
 export interface WebSocketMessage {
-  type: 'initial' | 'event' | 'hitl_response';
-  data: HookEvent | HookEvent[] | HumanInTheLoopResponse;
+  type: 'initial' | 'event' | 'hitl_response' | 'projects' | 'sessions';
+  data: HookEvent | HookEvent[] | HumanInTheLoopResponse | Project[] | Session[];
 }
 
 export type TimeRange = '1m' | '3m' | '5m' | '10m';

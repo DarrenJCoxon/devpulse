@@ -10,7 +10,7 @@
  */
 
 import { Database } from 'bun:sqlite';
-import type { HookEvent, Project, Session, SessionStatus, TestStatus } from './types';
+import type { HookEvent, Project, Session, SessionStatus, TestStatus, DevLog, ProjectStatus } from './types';
 
 let db: Database;
 
@@ -323,7 +323,7 @@ function detectDevServers(event: HookEvent, projectName: string): void {
 
   // Update or add
   const existing = servers.findIndex(s => s.port === port);
-  if (existing >= 0) {
+  if (existing >= 0 && servers[existing]) {
     servers[existing].type = type;
   } else {
     servers.push({ port, type });
@@ -391,7 +391,8 @@ function generateDevLog(sessionId: string, projectName: string, sourceApp: strin
     "SELECT summary FROM events WHERE session_id = ? AND source_app = ? AND hook_event_type IN ('Stop', 'SessionEnd') ORDER BY timestamp DESC LIMIT 1"
   ).get(sessionId, sourceApp) as any;
 
-  const summary = lastEvent?.summary || buildAutoSummary(toolBreakdown, filesChanged.size, commits.length);
+  const branch = session.current_branch || 'main';
+  const summary = lastEvent?.summary || buildAutoSummary(toolBreakdown, filesChanged.size, commits.length, projectName, branch);
 
   const startedAt = session.started_at;
   const durationMinutes = Math.round((now - startedAt) / 60000);
@@ -414,7 +415,13 @@ function generateDevLog(sessionId: string, projectName: string, sourceApp: strin
   );
 }
 
-function buildAutoSummary(toolBreakdown: Record<string, number>, fileCount: number, commitCount: number): string {
+function buildAutoSummary(
+  toolBreakdown: Record<string, number>,
+  fileCount: number,
+  commitCount: number,
+  projectName: string,
+  branch: string
+): string {
   const parts: string[] = [];
 
   const writes = (toolBreakdown['Write'] || 0) + (toolBreakdown['Edit'] || 0);
@@ -426,8 +433,8 @@ function buildAutoSummary(toolBreakdown: Record<string, number>, fileCount: numb
   if (bashOps > 0) parts.push(`${bashOps} command${bashOps > 1 ? 's' : ''}`);
   if (commitCount > 0) parts.push(`${commitCount} commit${commitCount > 1 ? 's' : ''}`);
 
-  if (parts.length === 0) return 'Brief session with minimal activity';
-  return `Session: ${parts.join(', ')} across ${fileCount} file${fileCount !== 1 ? 's' : ''}`;
+  if (parts.length === 0) return `Brief session on ${projectName}/${branch}`;
+  return `${parts.join(', ')} across ${fileCount} file${fileCount !== 1 ? 's' : ''} on ${branch}`;
 }
 
 // --- Query functions for API ---
@@ -501,4 +508,132 @@ export function markIdleSessions(): void {
 export function cleanupOldSessions(): void {
   const oneDayAgo = Date.now() - 86400000;
   db.prepare("DELETE FROM sessions WHERE status = 'stopped' AND last_event_at < ?").run(oneDayAgo);
+}
+
+// --- Port Scanning for Dev Servers ---
+
+/**
+ * Ports to scan for dev servers.
+ * Covers common development ports across different frameworks.
+ */
+const SCAN_PORTS = [
+  ...Array.from({length: 11}, (_, i) => 3000 + i),  // 3000-3010 (React, Express, etc.)
+  ...Array.from({length: 11}, (_, i) => 4000 + i),  // 4000-4010 (Bun, custom)
+  5173, 5174, 5175,                                   // Vite defaults
+  8000, 8001, 8002,                                   // Python, misc
+  8080, 8081, 8082,                                   // Java, misc
+];
+
+/**
+ * Scan a single port to check if a dev server is running.
+ * Uses a 1-second timeout to avoid hanging.
+ */
+async function scanSinglePort(port: number): Promise<{port: number; type: string} | null> {
+  // Skip DevPulse's own server port
+  const serverPort = parseInt(process.env.SERVER_PORT || '4000');
+  if (port === serverPort) return null;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1000);
+
+    const response = await fetch(`http://localhost:${port}`, {
+      signal: controller.signal,
+      method: 'HEAD'
+    });
+    clearTimeout(timeout);
+
+    // Consider any response that's not a server error as a running server
+    if (response.ok || response.status < 500) {
+      const type = detectServerType(response, port);
+      return { port, type };
+    }
+  } catch {
+    // Port not responding or connection refused - not a server
+  }
+
+  return null;
+}
+
+/**
+ * Detect the type of server based on HTTP response headers and port number.
+ */
+function detectServerType(response: Response, port: number): string {
+  const server = (response.headers.get('server') || '').toLowerCase();
+  const powered = (response.headers.get('x-powered-by') || '').toLowerCase();
+
+  // Check headers first
+  if (server.includes('next') || powered.includes('next')) return 'next';
+  if (server.includes('vite')) return 'vite';
+  if (server.includes('nuxt')) return 'nuxt';
+
+  // Fall back to port-based detection
+  if (port === 5173 || port === 5174 || port === 5175) return 'vite';
+  if (port >= 3000 && port <= 3010) return 'dev';
+  if (port >= 4000 && port <= 4010) return 'bun';
+  if (port >= 8000 && port <= 8002) return 'dev';
+  if (port >= 8080 && port <= 8082) return 'dev';
+
+  return 'dev';
+}
+
+/**
+ * Scan all configured ports in parallel to detect running dev servers.
+ * Updates projects with the detected servers.
+ */
+export async function scanPorts(): Promise<void> {
+  const results = await Promise.allSettled(
+    SCAN_PORTS.map(port => scanSinglePort(port))
+  );
+
+  const activeServers: Array<{port: number; type: string}> = [];
+
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value !== null) {
+      activeServers.push(result.value);
+    }
+  }
+
+  // Update all projects with scan results
+  updateProjectDevServers(activeServers);
+}
+
+/**
+ * Update project dev_servers fields with scan results.
+ * This merges scanned servers with event-detected servers.
+ */
+function updateProjectDevServers(servers: Array<{port: number; type: string}>): void {
+  // Get all projects
+  const projects = db.prepare('SELECT name, dev_servers FROM projects').all() as Array<{name: string; dev_servers: string}>;
+
+  for (const project of projects) {
+    // Parse existing servers
+    let existingServers: Array<{port: number; type: string}> = [];
+    try {
+      existingServers = JSON.parse(project.dev_servers || '[]');
+    } catch {}
+
+    // Merge: keep event-detected servers, add/update with scan results
+    const mergedServers = [...existingServers];
+
+    for (const scannedServer of servers) {
+      const existingIndex = mergedServers.findIndex(s => s.port === scannedServer.port);
+      if (existingIndex >= 0 && mergedServers[existingIndex]) {
+        // Update existing server type if scanned
+        mergedServers[existingIndex].type = scannedServer.type;
+      } else {
+        // Add new scanned server
+        mergedServers.push(scannedServer);
+      }
+    }
+
+    // Remove servers that are no longer responding (not in scan results)
+    const activeServers = mergedServers.filter(server =>
+      servers.some(s => s.port === server.port)
+    );
+
+    // Update database
+    db.prepare('UPDATE projects SET dev_servers = ?, updated_at = ? WHERE name = ?')
+      .run(JSON.stringify(activeServers), Date.now(), project.name);
+  }
 }

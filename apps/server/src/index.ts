@@ -1,8 +1,8 @@
 import { initDatabase, getDb, insertEvent, getFilterOptions, getRecentEvents, updateEventHITLResponse } from './db';
-import { 
-  initEnricher, enrichEvent, getAllProjects, getActiveSessions, 
+import {
+  initEnricher, enrichEvent, getAllProjects, getActiveSessions,
   getProjectStatus, getRecentDevLogs, getDevLogsForProject,
-  markIdleSessions, cleanupOldSessions
+  markIdleSessions, cleanupOldSessions, scanPorts
 } from './enricher';
 import type { HookEvent, HumanInTheLoopResponse } from './types';
 import { 
@@ -15,9 +15,23 @@ initDatabase();
 initEnricher(getDb());
 
 // Mark idle sessions every 30 seconds
-setInterval(() => markIdleSessions(), 30000);
+setInterval(() => {
+  markIdleSessions();
+  broadcastProjects(); // Broadcast session updates to clients when idle status changes
+}, 30000);
+
 // Cleanup old sessions every hour
 setInterval(() => cleanupOldSessions(), 3600000);
+
+// Scan ports for dev servers every 60 seconds
+setInterval(() => {
+  scanPorts().then(() => broadcastProjects()).catch(console.error);
+}, 60000);
+
+// Initial port scan after 5 second delay (allow server to fully start)
+setTimeout(() => {
+  scanPorts().catch(console.error);
+}, 5000);
 
 // Store WebSocket clients
 const wsClients = new Set<any>();

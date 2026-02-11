@@ -21,11 +21,28 @@ import json
 import sys
 import os
 import argparse
+import subprocess
 import urllib.request
 import urllib.error
 from datetime import datetime
 from utils.summarizer import generate_event_summary
 from utils.model_extractor import get_model_from_transcript
+
+def get_git_branch(cwd):
+    """Get current git branch from working directory. Returns empty string on failure."""
+    try:
+        result = subprocess.run(
+            ['git', 'branch', '--show-current'],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError, Exception):
+        pass
+    return ''
 
 def send_event_to_server(event_data, server_url='http://localhost:4000/events'):
     """Send event data to the observability server."""
@@ -72,7 +89,14 @@ def main():
     except json.JSONDecodeError as e:
         print(f"Failed to parse JSON input: {e}", file=sys.stderr)
         sys.exit(1)
-    
+
+    # Detect and inject git branch from cwd
+    cwd = input_data.get('cwd', '')
+    if cwd:
+        branch = get_git_branch(cwd)
+        if branch:
+            input_data['git_branch'] = branch
+
     # Extract model name from transcript (with caching)
     session_id = input_data.get('session_id', 'unknown')
     transcript_path = input_data.get('transcript_path', '')

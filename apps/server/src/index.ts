@@ -14,6 +14,7 @@ import { initSummaries, getDailySummary, getWeeklySummary } from './summaries';
 import { getCostsByProject, getCostsBySession, getDailyCosts } from './costs';
 import { initMetrics, getSessionMetrics, getProjectMetrics } from './metrics';
 import { getActiveConflicts, dismissConflict, detectConflicts } from './conflicts';
+import { checkAlerts } from './alerts';
 
 // Initialize database and enricher
 initDatabase();
@@ -22,10 +23,11 @@ initVercelPoller(getDb());
 initSummaries(getDb());
 initMetrics(getDb());
 
-// Mark idle sessions every 30 seconds
+// Mark idle sessions and check alerts every 30 seconds
 setInterval(() => {
   markIdleSessions();
   broadcastProjects(); // Broadcast session updates to clients when idle status changes
+  broadcastAlerts(); // Check and broadcast alerts
 }, 30000);
 
 // Cleanup old sessions every hour
@@ -630,6 +632,10 @@ const server = Bun.serve({
       // Send initial conflicts (E4-S5)
       const conflicts = getActiveConflicts();
       ws.send(JSON.stringify({ type: 'conflicts', data: conflicts }));
+
+      // Send initial alerts (E5-S3)
+      const alerts = checkAlerts(getDb());
+      ws.send(JSON.stringify({ type: 'alerts', data: alerts }));
     },
     
     message(ws, message) {
@@ -683,6 +689,20 @@ function broadcastTopology() {
 function broadcastConflicts() {
   const conflicts = getActiveConflicts();
   const message = JSON.stringify({ type: 'conflicts', data: conflicts });
+
+  wsClients.forEach(client => {
+    try {
+      client.send(message);
+    } catch {
+      wsClients.delete(client);
+    }
+  });
+}
+
+// Broadcast alert updates to all clients (E5-S3)
+function broadcastAlerts() {
+  const alerts = checkAlerts(getDb());
+  const message = JSON.stringify({ type: 'alerts', data: alerts });
 
   wsClients.forEach(client => {
     try {

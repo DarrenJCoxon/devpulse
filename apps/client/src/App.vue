@@ -54,6 +54,22 @@
             <span class="text-2xl mobile:text-base">📊</span>
           </button>
 
+          <!-- Alerts Button (E5-S3) -->
+          <button
+            @click="showAlertPanel = !showAlertPanel"
+            class="p-3 mobile:p-1 rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 border border-white/30 hover:border-white/50 backdrop-blur-sm shadow-lg hover:shadow-xl relative"
+            title="Alerts"
+          >
+            <span class="text-2xl mobile:text-base">🔔</span>
+            <!-- Badge for active alerts -->
+            <span
+              v-if="activeAlertCount > 0"
+              class="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center border border-white animate-pulse"
+            >
+              {{ activeAlertCount }}
+            </span>
+          </button>
+
           <!-- Conflicts Button (E4-S5) -->
           <button
             @click="showConflictPanel = !showConflictPanel"
@@ -125,6 +141,13 @@
         {{ tab.label }}
       </button>
     </nav>
+
+    <!-- Alert Banner (E5-S3) - shown on all tabs when alerts present -->
+    <AlertBanner
+      v-if="!showAlertPanel"
+      :alerts="activeAlerts"
+      :dismiss-alert="dismissAlert"
+    />
 
     <!-- Projects Tab -->
     <div v-if="activeTab === 'projects'" class="flex-1 overflow-auto">
@@ -250,6 +273,35 @@
       @dismiss="dismissToast(toast.id)"
     />
 
+    <!-- Alert Panel (E5-S3) -->
+    <div
+      v-if="showAlertPanel"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      @click.self="showAlertPanel = false"
+    >
+      <div class="bg-[var(--theme-bg-primary)] rounded-lg shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden border border-[var(--theme-border-primary)]">
+        <div class="flex items-center justify-between p-4 border-b border-[var(--theme-border-primary)]">
+          <h2 class="text-xl font-bold text-[var(--theme-text-primary)]">Active Alerts</h2>
+          <button
+            @click="showAlertPanel = false"
+            class="p-2 rounded-lg hover:bg-[var(--theme-hover-bg)] transition-colors"
+            title="Close"
+          >
+            <span class="text-2xl">✕</span>
+          </button>
+        </div>
+        <div class="overflow-y-auto max-h-[calc(80vh-5rem)]">
+          <AlertBanner
+            :alerts="activeAlerts"
+            :dismiss-alert="dismissAlert"
+          />
+          <div v-if="activeAlerts.length === 0" class="p-8 text-center text-[var(--theme-text-tertiary)]">
+            No active alerts
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Conflict Panel (E4-S5) -->
     <ConflictPanel
       v-if="showConflictPanel"
@@ -269,6 +321,7 @@ import { useThemes } from './composables/useThemes';
 import { useEventColors } from './composables/useEventColors';
 import { useNotifications } from './composables/useNotifications';
 import { useCommandPalette } from './composables/useCommandPalette';
+import { useAlerts } from './composables/useAlerts';
 import EventTimeline from './components/EventTimeline.vue';
 import FilterPanel from './components/FilterPanel.vue';
 import StickScrollButton from './components/StickScrollButton.vue';
@@ -286,6 +339,7 @@ import NotificationSettings from './components/NotificationSettings.vue';
 import CostDashboard from './components/CostDashboard.vue';
 import AgentMetrics from './components/AgentMetrics.vue';
 import ConflictPanel from './components/ConflictPanel.vue';
+import AlertBanner from './components/AlertBanner.vue';
 import { WS_URL } from './config';
 
 // Tab navigation
@@ -301,10 +355,13 @@ const tabs = [
 const activeTab = ref<'projects' | 'events' | 'topology' | 'devlog' | 'summaries' | 'costs' | 'metrics'>('projects');
 
 // WebSocket connection
-const { events, isConnected, error, clearEvents, projects, sessions, topology, conflicts } = useWebSocket(WS_URL);
+const { events, isConnected, error, clearEvents, projects, sessions, topology, conflicts, alerts } = useWebSocket(WS_URL);
 
 // Projects and dev logs
 const { devLogs } = useProjects(projects, sessions);
+
+// Alerts management
+const { dismissAlert, activeAlerts, activeAlertCount } = useAlerts(alerts);
 
 // Theme management (sets up theme system)
 useThemes();
@@ -331,6 +388,7 @@ const showThemeManager = ref(false);
 const showFilters = ref(false);
 const showNotificationSettings = ref(false);
 const showConflictPanel = ref(false);
+const showAlertPanel = ref(false);
 const uniqueAppNames = ref<string[]>([]); // Apps active in current time window
 const allAppNames = ref<string[]>([]); // All apps ever seen in session
 const selectedAgentLanes = ref<string[]>([]);
@@ -474,6 +532,16 @@ onMounted(() => {
     keywords: ['notification', 'bell', 'alerts'],
     icon: '🔔',
     execute: () => { showNotificationSettings.value = true; }
+  });
+
+  // Action: Toggle alert panel
+  registerAction({
+    id: 'toggle-alerts',
+    label: 'View Alerts',
+    category: 'action',
+    keywords: ['alert', 'notification', 'warning'],
+    icon: '🔔',
+    execute: () => { showAlertPanel.value = true; }
   });
 
   // Action: Toggle conflict panel

@@ -1,12 +1,24 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import type { HookEvent, WebSocketMessage, Project, Session, AgentNode, FileConflict } from '../types';
 
+export interface Alert {
+  id: string;
+  type: 'stuck_agent' | 'excessive_writes' | 'repeated_failures';
+  severity: 'warning' | 'critical';
+  sessionId: string;
+  sourceApp: string;
+  agentLabel: string;
+  message: string;
+  detectedAt: number;
+}
+
 export function useWebSocket(url: string) {
   const events = ref<HookEvent[]>([]);
   const projects = ref<Project[]>([]);
   const sessions = ref<Session[]>([]);
   const topology = ref<AgentNode[]>([]);
   const conflicts = ref<FileConflict[]>([]);
+  const alerts = ref<Alert[]>([]);
   const isConnected = ref(false);
   const error = ref<string | null>(null);
   
@@ -51,6 +63,8 @@ export function useWebSocket(url: string) {
             topology.value = Array.isArray(message.data) ? message.data as AgentNode[] : [];
           } else if (message.type === 'conflicts') {
             conflicts.value = Array.isArray(message.data) ? message.data as FileConflict[] : [];
+          } else if (message.type === 'alerts') {
+            alerts.value = Array.isArray(message.data) ? message.data as Alert[] : [];
           }
         } catch (err) {
           console.error('Failed to parse WebSocket message:', err);
@@ -108,6 +122,7 @@ export function useWebSocket(url: string) {
     sessions,
     topology,
     conflicts,
+    alerts,
     isConnected,
     error,
     clearEvents

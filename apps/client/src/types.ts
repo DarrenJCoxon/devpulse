@@ -102,8 +102,8 @@ export interface DevLog {
 }
 
 export interface WebSocketMessage {
-  type: 'initial' | 'event' | 'hitl_response' | 'projects' | 'sessions' | 'topology' | 'conflicts';
-  data: HookEvent | HookEvent[] | HumanInTheLoopResponse | Project[] | Session[] | AgentNode[] | FileConflict[];
+  type: 'initial' | 'event' | 'hitl_response' | 'projects' | 'sessions' | 'topology' | 'conflicts' | 'alerts';
+  data: HookEvent | HookEvent[] | HumanInTheLoopResponse | Project[] | Session[] | AgentNode[] | FileConflict[] | any[];
 }
 
 // --- Agent Topology types (E4-S1) ---

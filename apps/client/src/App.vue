@@ -99,6 +99,14 @@
           >
             <span class="text-2xl mobile:text-base">🎨</span>
           </button>
+
+          <!-- Command Palette Hint -->
+          <div
+            class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/20 border border-white/30 backdrop-blur-sm"
+            title="Open command palette"
+          >
+            <kbd class="px-1.5 py-0.5 text-xs font-semibold text-white bg-white/20 rounded border border-white/30">⌘K</kbd>
+          </div>
         </div>
       </div>
     </header>
@@ -211,6 +219,9 @@
       @close="showThemeManager = false"
     />
 
+    <!-- Command Palette -->
+    <CommandPalette />
+
     <!-- Notification Settings -->
     <NotificationSettings
       v-if="showNotificationSettings"
@@ -240,18 +251,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, onMounted } from 'vue';
 import type { TimeRange } from './types';
 import { useWebSocket } from './composables/useWebSocket';
 import { useProjects } from './composables/useProjects';
 import { useThemes } from './composables/useThemes';
 import { useEventColors } from './composables/useEventColors';
 import { useNotifications } from './composables/useNotifications';
+import { useCommandPalette } from './composables/useCommandPalette';
 import EventTimeline from './components/EventTimeline.vue';
 import FilterPanel from './components/FilterPanel.vue';
 import StickScrollButton from './components/StickScrollButton.vue';
 import LivePulseChart from './components/LivePulseChart.vue';
 import ThemeManager from './components/ThemeManager.vue';
+import CommandPalette from './components/CommandPalette.vue';
 import ToastNotification from './components/ToastNotification.vue';
 import AgentSwimLaneContainer from './components/AgentSwimLaneContainer.vue';
 import ProjectOverview from './components/ProjectOverview.vue';
@@ -290,6 +303,9 @@ const { getHexColorForApp } = useEventColors();
 
 // Notifications
 const { settings: notificationSettings, requestPermission: requestNotificationPermission } = useNotifications(events);
+
+// Command Palette
+const { registerAction, setFilterCallbacks } = useCommandPalette();
 
 // Filters
 const filters = ref({
@@ -377,4 +393,150 @@ const handleConflictDismiss = (id: string) => {
   // The dismiss is handled by ConflictPanel, WebSocket will update our conflicts ref
   console.log('Conflict dismissed:', id);
 };
+
+// Register command palette actions
+onMounted(() => {
+  // Set up filter callbacks
+  setFilterCallbacks({
+    updateSessionFilter: (sessionId: string) => {
+      filters.value.sessionId = sessionId;
+      activeTab.value = 'events';
+      showFilters.value = true;
+    },
+    updateSourceFilter: (sourceApp: string) => {
+      filters.value.sourceApp = sourceApp;
+      activeTab.value = 'events';
+      showFilters.value = true;
+    },
+    updateTypeFilter: (eventType: string) => {
+      filters.value.eventType = eventType;
+      activeTab.value = 'events';
+      showFilters.value = true;
+    },
+    navigateToProject: (_projectName: string) => {
+      // Navigate to projects tab - in the future, could scroll to specific project card
+      activeTab.value = 'projects';
+    }
+  });
+
+  // Action: Clear events
+  registerAction({
+    id: 'clear-events',
+    label: 'Clear Events',
+    category: 'action',
+    keywords: ['clear', 'events', 'reset', 'delete'],
+    icon: '🗑️',
+    execute: handleClearClick
+  });
+
+  // Action: Toggle theme manager
+  registerAction({
+    id: 'toggle-theme',
+    label: 'Open Theme Manager',
+    category: 'settings',
+    keywords: ['theme', 'color', 'appearance', 'style'],
+    icon: '🎨',
+    execute: () => { showThemeManager.value = true; }
+  });
+
+  // Action: Toggle filters panel
+  registerAction({
+    id: 'toggle-filters',
+    label: 'Toggle Filters Panel',
+    category: 'action',
+    keywords: ['filter', 'search', 'query'],
+    icon: '📊',
+    execute: () => { showFilters.value = !showFilters.value; }
+  });
+
+  // Action: Toggle notification settings
+  registerAction({
+    id: 'toggle-notifications',
+    label: 'Notification Settings',
+    category: 'settings',
+    keywords: ['notification', 'bell', 'alerts'],
+    icon: '🔔',
+    execute: () => { showNotificationSettings.value = true; }
+  });
+
+  // Action: Toggle conflict panel
+  registerAction({
+    id: 'toggle-conflicts',
+    label: 'View File Conflicts',
+    category: 'action',
+    keywords: ['conflict', 'file', 'warning'],
+    icon: '⚠️',
+    execute: () => { showConflictPanel.value = true; }
+  });
+
+  // Action: Navigate to Projects tab
+  registerAction({
+    id: 'nav-projects',
+    label: 'Go to Projects Tab',
+    category: 'navigate',
+    keywords: ['projects', 'overview', 'dashboard'],
+    icon: '📁',
+    execute: () => { activeTab.value = 'projects'; }
+  });
+
+  // Action: Navigate to Events tab
+  registerAction({
+    id: 'nav-events',
+    label: 'Go to Events Tab',
+    category: 'navigate',
+    keywords: ['events', 'timeline', 'stream'],
+    icon: '📋',
+    execute: () => { activeTab.value = 'events'; }
+  });
+
+  // Action: Navigate to Topology tab
+  registerAction({
+    id: 'nav-topology',
+    label: 'Go to Topology Tab',
+    category: 'navigate',
+    keywords: ['topology', 'graph', 'agents'],
+    icon: '🕸️',
+    execute: () => { activeTab.value = 'topology'; }
+  });
+
+  // Action: Navigate to Dev Log tab
+  registerAction({
+    id: 'nav-devlog',
+    label: 'Go to Dev Log Tab',
+    category: 'navigate',
+    keywords: ['devlog', 'log', 'history'],
+    icon: '📝',
+    execute: () => { activeTab.value = 'devlog'; }
+  });
+
+  // Action: Navigate to Summaries tab
+  registerAction({
+    id: 'nav-summaries',
+    label: 'Go to Summaries Tab',
+    category: 'navigate',
+    keywords: ['summaries', 'summary', 'report'],
+    icon: '📊',
+    execute: () => { activeTab.value = 'summaries'; }
+  });
+
+  // Action: Navigate to Costs tab
+  registerAction({
+    id: 'nav-costs',
+    label: 'Go to Costs Tab',
+    category: 'navigate',
+    keywords: ['costs', 'pricing', 'money'],
+    icon: '💰',
+    execute: () => { activeTab.value = 'costs'; }
+  });
+
+  // Action: Navigate to Metrics tab
+  registerAction({
+    id: 'nav-metrics',
+    label: 'Go to Metrics Tab',
+    category: 'navigate',
+    keywords: ['metrics', 'performance', 'stats'],
+    icon: '📈',
+    execute: () => { activeTab.value = 'metrics'; }
+  });
+});
 </script>

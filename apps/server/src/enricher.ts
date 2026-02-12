@@ -371,13 +371,21 @@ export function enrichEvent(event: HookEvent): void {
       if (branch) updateSessionBranch(sessionId, event.source_app, branch);
       break;
 
-    case 'UserPromptSubmit':
+    case 'UserPromptSubmit': {
       // User responded, agent is active again — good time to detect branch changes
+      // Check if session was stopped so we can update project count
+      const prevSession = db.prepare(
+        'SELECT status FROM sessions WHERE session_id = ? AND source_app = ?'
+      ).get(sessionId, event.source_app) as any;
+      const wasInactive = prevSession && (prevSession.status === 'stopped' || prevSession.status === 'idle');
+
       updateSessionStatus(sessionId, event.source_app, 'active', now);
+      if (wasInactive) updateProjectSessionCount(projectName);
       if (branch) updateSessionBranch(sessionId, event.source_app, branch);
       // Capture topic from the first meaningful prompt
       captureSessionTopic(sessionId, event.source_app, event);
       break;
+    }
 
     case 'PreToolUse':
     case 'PostToolUse':
@@ -507,18 +515,23 @@ function updateSessionStatus(sessionId: string, sourceApp: string, status: Sessi
 }
 
 function updateSessionActivity(sessionId: string, sourceApp: string, now: number, branch?: string): void {
-  // Set status back to 'active' — this handles the case where a Notification set it to 'waiting'
-  // and the agent resumed working (tool use events arriving means it's active)
-  db.prepare(
-    "UPDATE sessions SET status = 'active', last_event_at = ?, event_count = event_count + 1 WHERE session_id = ? AND source_app = ? AND status != 'stopped'"
-  ).run(now, sessionId, sourceApp);
-
-  // Also ensure session exists (in case we missed SessionStart)
-  const existing = db.prepare(
-    'SELECT id FROM sessions WHERE session_id = ? AND source_app = ?'
+  // If events are arriving for a session, it's active — regardless of what we thought its status was.
+  // This handles sessions reactivating after being marked stopped by the idle timeout.
+  const prev = db.prepare(
+    'SELECT status, project_name FROM sessions WHERE session_id = ? AND source_app = ?'
   ).get(sessionId, sourceApp) as any;
 
-  if (!existing) {
+  db.prepare(
+    "UPDATE sessions SET status = 'active', last_event_at = ?, event_count = event_count + 1 WHERE session_id = ? AND source_app = ?"
+  ).run(now, sessionId, sourceApp);
+
+  // If session was stopped/idle and is now reactivated, update the project's active_sessions count
+  if (prev && (prev.status === 'stopped' || prev.status === 'idle')) {
+    updateProjectSessionCount(prev.project_name);
+  }
+
+  // Also ensure session exists (in case we missed SessionStart)
+  if (!prev) {
     upsertSession(sessionId, sourceApp, sourceApp, 'active', branch || '', now, '', '');
   }
 

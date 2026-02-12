@@ -16,81 +16,172 @@ Real-time development dashboard for [Claude Code](https://docs.anthropic.com/en/
 
 Built on top of [claude-code-hooks-multi-agent-observability](https://github.com/disler/claude-code-hooks-multi-agent-observability) by IndyDevDan.
 
-## Quick Start
+---
+
+## Setup (step by step)
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) (v1.1+)
-- [Astral uv](https://docs.astral.sh/uv/) (for Python hook scripts)
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed
+Install these before you start:
 
-### 1. Clone and install
+1. **[Bun](https://bun.sh/)** (v1.1+) — runtime for the server and client
+2. **[Astral uv](https://docs.astral.sh/uv/)** — runs the Python hook scripts
+3. **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — the CLI you're monitoring
+
+### Step 1: Clone the repo
 
 ```bash
-git clone https://github.com/your-user/devPulse.git
-cd devPulse
-cd apps/server && bun install && cd ../client && bun install && cd ../..
+git clone https://github.com/DarrenJCoxon/devpulse.git
+cd devpulse
 ```
 
-### 2. Create `.env` (optional)
+### Step 2: Install dependencies
+
+Run `bun install` in both the server and client directories:
+
+```bash
+cd apps/server && bun install
+cd ../client && bun install
+cd ../..
+```
+
+You should now be back in the project root.
+
+### Step 3: Create your `.env` file (optional)
 
 ```bash
 cp .env.sample .env
-# Edit .env to add GitHub / Vercel tokens if you want those integrations
 ```
 
-DevPulse works without any env vars — the integrations are optional.
+This creates a `.env` file at the project root. DevPulse works without any env vars — GitHub and Vercel integrations are optional. If you want them, edit `.env` and add your tokens (see [Environment Variables](#environment-variables) below).
 
-### 3. Start the system
+### Step 4: Start DevPulse
 
 ```bash
 ./scripts/start-system.sh
 ```
 
-This launches the Bun server on **:4000** and the Vite dev server on **:5173**.
+This starts two processes:
+- **Server** on `http://localhost:4000` — receives events, stores in SQLite, broadcasts via WebSocket
+- **Client** on `http://localhost:5173` — the dashboard UI
 
-### 4. Install hooks in your projects
+Wait for both "ready" messages before continuing.
+
+### Step 5: Install hooks in a project you want to monitor
+
+From the DevPulse root, run:
 
 ```bash
-./scripts/install-hooks.sh /path/to/your/project "MyProject"
+./scripts/install-hooks.sh /absolute/path/to/your/project "ProjectName"
 ```
 
-This copies the hook scripts and generates a `.claude/settings.json` in the target project. The `--source-app` flag is set to the project name you provide, so events appear labelled correctly in the dashboard.
+For example:
 
-### 5. Open the dashboard
+```bash
+./scripts/install-hooks.sh ~/Code/my-api "MyAPI"
+./scripts/install-hooks.sh ~/Code/react-app "ReactApp"
+```
 
-Navigate to [http://localhost:5173](http://localhost:5173) and start a Claude Code session in any hooked project. Events stream in immediately.
+This does three things:
+1. Creates `.claude/hooks/` in the target project with all the hook scripts
+2. Generates `.claude/settings.json` configured to send events labelled with your project name
+3. Backs up any existing `.claude/settings.json` to `.claude/settings.json.backup`
+
+You can run this on as many projects as you like.
+
+### Step 6: Open the dashboard and start coding
+
+1. Open **http://localhost:5173** in your browser
+2. Open a terminal, `cd` into any hooked project, and run `claude`
+3. Events stream into the dashboard as Claude Code works
+
+That's it. Every tool call, prompt, notification, and session event will appear in real-time.
+
+---
 
 ## Environment Variables
 
-All env vars are optional. Create a `.env` file at the project root (see `.env.sample`).
+All env vars are optional. Create a `.env` file at the project root by copying `.env.sample`.
 
-| Variable | Purpose |
-|---|---|
-| `GITHUB_TOKEN` | GitHub PAT with `repo` scope. Enables commit/PR/CI polling. |
-| `GITHUB_REPOS` | JSON map of project name to `owner/repo` (e.g. `{"MyApp": "me/myapp"}`) |
-| `VERCEL_API_TOKEN` | Vercel API token. Enables deployment status display. |
-| `VERCEL_PROJECTS` | JSON map of project name to Vercel project ID |
-| `VERCEL_TEAM_ID` | Vercel team/org ID (if projects belong to a team) |
+### GitHub Integration
 
-The server loads `.env` from the project root via Bun's `--env-file` flag, so you only need one file regardless of where the server process runs.
+Shows recent commits, open PRs, and CI workflow status on your project cards.
 
-## Adding Projects
+1. Go to **https://github.com/settings/tokens** and create a **fine-grained personal access token**
+2. Set **Repository access** to "Only select repositories" and pick the repos you want to monitor
+3. Under **Permissions**, grant read-only access to: **Contents**, **Pull requests**, **Actions**
+4. Copy the token and add it to `.env`:
 
-### Via the install script
+```env
+GITHUB_TOKEN=github_pat_your_token_here
+GITHUB_REPOS={"MyProject": "owner/repo", "AnotherProject": "owner/repo2"}
+```
+
+The `GITHUB_REPOS` keys must match the project names you used in `install-hooks.sh`.
+
+### Vercel Integration
+
+Shows latest deployment status on your project cards.
+
+1. Go to **https://vercel.com/account/tokens** and create a token with **Read Only** scope
+2. Copy the token and add it to `.env`:
+
+```env
+VERCEL_API_TOKEN=your_vercel_token_here
+VERCEL_PROJECTS={"MyProject": "prj_xxxxxxxxxxxx"}
+```
+
+To find your Vercel project ID, run `vercel ls` or check your project settings in the Vercel dashboard.
+
+3. If your projects belong to a team, also set:
+
+```env
+VERCEL_TEAM_ID=team_xxxxxxxxxxxx
+```
+
+You can find your team ID in the Vercel dashboard URL or via the API.
+
+---
+
+## Adding More Projects
+
+### Via the install script (recommended)
 
 ```bash
 ./scripts/install-hooks.sh ~/Code/my-api "MyAPI"
 ```
 
-This:
-1. Copies all hook scripts to `<project>/.claude/hooks/`
-2. Generates `.claude/settings.json` with the project name baked in
-3. Backs up any existing settings file
-
 ### Manually
 
-Copy `.claude/hooks/send_event.py` to your project and add entries to your `.claude/settings.json` following the patterns in this repo's settings.
+If you prefer to set things up yourself:
+
+1. Copy the hook scripts:
+   ```bash
+   cp -R /path/to/devpulse/.claude/hooks /path/to/your/project/.claude/hooks
+   ```
+
+2. Add hook entries to your project's `.claude/settings.json`, replacing `YourProjectName` with a unique name. See this repo's `.claude/settings.json` for the full configuration covering all 12 hook event types.
+
+### Removing hooks from a project
+
+Delete the hooks directory and restore the backup settings:
+
+```bash
+rm -rf /path/to/project/.claude/hooks
+mv /path/to/project/.claude/settings.json.backup /path/to/project/.claude/settings.json
+```
+
+---
+
+## Stopping DevPulse
+
+```bash
+./scripts/reset-system.sh
+```
+
+This stops both processes and resets the database. To stop without resetting, just press `Ctrl+C` in the terminal running `start-system.sh`.
+
+---
 
 ## Architecture
 
@@ -140,14 +231,6 @@ Claude Code Sessions
 - **Client**: Vue 3 (Composition API `<script setup>`), TypeScript, Vite, Tailwind CSS
 - **Hooks**: Python 3.8+, Astral uv (inline script dependencies)
 - **Communication**: HTTP REST + WebSocket
-
-## Scripts
-
-```bash
-./scripts/start-system.sh    # Start server + client
-./scripts/reset-system.sh    # Stop all processes and reset DB
-./scripts/install-hooks.sh   # Install hooks in another project
-```
 
 ## Credits
 

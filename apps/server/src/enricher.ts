@@ -353,9 +353,9 @@ export function enrichEvent(event: HookEvent): void {
       break;
 
     case 'Stop':
-      updateSessionStatus(sessionId, event.source_app, 'stopped', now);
-      updateProjectSessionCount(projectName);
-      generateDevLog(sessionId, projectName, event.source_app, now);
+      // Stop fires after every Claude response (between turns), NOT only at session end.
+      // Mark as waiting (agent finished responding, waiting for next user prompt).
+      updateSessionStatus(sessionId, event.source_app, 'waiting', now);
       break;
 
     case 'Notification':

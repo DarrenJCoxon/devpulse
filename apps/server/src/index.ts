@@ -117,6 +117,355 @@ const jsonHeaders = { ...headers, 'Content-Type': 'application/json' };
 // Server port constant
 const SERVER_PORT = parseInt(process.env.SERVER_PORT || '4000');
 
+// Generate HTML report for export (E6-S2)
+function generateHTMLReport(
+  logs: any[],
+  filters: { project?: string | null; sessionId?: string | null; from?: string | null; to?: string | null }
+): string {
+  const reportTitle = filters.project
+    ? `DevPulse Report - ${filters.project}`
+    : filters.sessionId
+    ? `DevPulse Report - Session ${filters.sessionId.slice(0, 8)}`
+    : 'DevPulse Report - All Projects';
+
+  const generatedDate = new Date().toISOString();
+
+  // Helper to parse JSON safely
+  const parseJSON = (str: string | null, fallback: any) => {
+    if (!str) return fallback;
+    try { return JSON.parse(str); } catch { return fallback; }
+  };
+
+  // Helper to format duration
+  const formatDuration = (minutes: number): string => {
+    if (minutes < 60) return `${Math.round(minutes)}m`;
+    const hours = Math.floor(minutes / 60);
+    const mins = Math.round(minutes % 60);
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  };
+
+  // Calculate summary stats
+  const totalSessions = logs.length;
+  const totalDuration = logs.reduce((sum, log) => sum + log.duration_minutes, 0);
+  const totalEvents = logs.reduce((sum, log) => sum + log.event_count, 0);
+  const allFiles = new Set<string>();
+  let totalCommits = 0;
+
+  logs.forEach(log => {
+    const files = parseJSON(log.files_changed, []);
+    files.forEach((f: string) => allFiles.add(f));
+    const commits = parseJSON(log.commits, []);
+    totalCommits += commits.length;
+  });
+
+  // Generate log entries HTML
+  const logsHTML = logs.map(log => {
+    const files = parseJSON(log.files_changed, []);
+    const commits = parseJSON(log.commits, []);
+    const toolBreakdown = parseJSON(log.tool_breakdown, {});
+    const toolEntries = Object.entries(toolBreakdown);
+
+    const filesHTML = files.length > 0
+      ? `<div class="section">
+           <h4>Files Changed (${files.length})</h4>
+           <div class="file-list">
+             ${files.map((f: string) => `<code class="file-item">${escapeHTML(f)}</code>`).join('')}
+           </div>
+         </div>`
+      : '';
+
+    const commitsHTML = commits.length > 0
+      ? `<div class="section">
+           <h4>Commits</h4>
+           <ul class="commit-list">
+             ${commits.map((c: string) => `<li>${escapeHTML(c)}</li>`).join('')}
+           </ul>
+         </div>`
+      : '';
+
+    const toolsHTML = toolEntries.length > 0
+      ? `<div class="section">
+           <h4>Tool Usage</h4>
+           <div class="tool-breakdown">
+             ${toolEntries.map(([tool, count]) =>
+               `<span class="tool-badge"><strong>${escapeHTML(tool)}</strong>: ${count}×</span>`
+             ).join('')}
+           </div>
+         </div>`
+      : '';
+
+    return `
+      <div class="log-card">
+        <div class="log-header">
+          <h3>${escapeHTML(log.project_name)} - ${escapeHTML(log.branch)}</h3>
+          <div class="log-meta">
+            <span><strong>Session:</strong> ${escapeHTML(log.session_id.slice(0, 8))}</span>
+            <span><strong>Duration:</strong> ${formatDuration(log.duration_minutes)}</span>
+            <span><strong>Events:</strong> ${log.event_count}</span>
+            <span><strong>Completed:</strong> ${new Date(log.ended_at).toLocaleString()}</span>
+          </div>
+        </div>
+        <div class="log-body">
+          <div class="section">
+            <h4>Summary</h4>
+            <p>${escapeHTML(log.summary)}</p>
+          </div>
+          ${filesHTML}
+          ${commitsHTML}
+          ${toolsHTML}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHTML(reportTitle)}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #1a202c;
+      padding: 2rem;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+
+    .report-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 2rem;
+      text-align: center;
+    }
+
+    .report-header h1 {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .report-header .generated {
+      opacity: 0.9;
+      font-size: 0.875rem;
+    }
+
+    .summary-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      padding: 2rem;
+      background: #f7fafc;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .stat-card {
+      background: white;
+      padding: 1rem;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+
+    .stat-card .label {
+      font-size: 0.875rem;
+      color: #718096;
+      margin-bottom: 0.25rem;
+    }
+
+    .stat-card .value {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #667eea;
+    }
+
+    .logs-container {
+      padding: 2rem;
+    }
+
+    .log-card {
+      background: #f7fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+      overflow: hidden;
+    }
+
+    .log-header {
+      background: white;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .log-header h3 {
+      color: #2d3748;
+      margin-bottom: 0.5rem;
+    }
+
+    .log-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      font-size: 0.875rem;
+      color: #718096;
+    }
+
+    .log-body {
+      padding: 1.5rem;
+    }
+
+    .section {
+      margin-bottom: 1.5rem;
+    }
+
+    .section:last-child {
+      margin-bottom: 0;
+    }
+
+    .section h4 {
+      color: #4a5568;
+      font-size: 0.875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.75rem;
+    }
+
+    .section p {
+      color: #2d3748;
+    }
+
+    .file-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .file-item {
+      background: white;
+      border: 1px solid #e2e8f0;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
+      color: #667eea;
+    }
+
+    .commit-list {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .commit-list li {
+      color: #2d3748;
+      padding: 0.25rem 0;
+      padding-left: 1rem;
+      position: relative;
+    }
+
+    .commit-list li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: #667eea;
+      font-weight: bold;
+    }
+
+    .tool-breakdown {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .tool-badge {
+      background: white;
+      border: 1px solid #e2e8f0;
+      padding: 0.25rem 0.75rem;
+      border-radius: 4px;
+      font-size: 0.875rem;
+      color: #2d3748;
+    }
+
+    .tool-badge strong {
+      color: #667eea;
+    }
+
+    .no-logs {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: #718096;
+    }
+
+    @media print {
+      body { background: white; padding: 0; }
+      .container { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="report-header">
+      <h1>${escapeHTML(reportTitle)}</h1>
+      <div class="generated">Generated: ${generatedDate}</div>
+    </div>
+
+    <div class="summary-stats">
+      <div class="stat-card">
+        <div class="label">Total Sessions</div>
+        <div class="value">${totalSessions}</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Total Duration</div>
+        <div class="value">${formatDuration(totalDuration)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Total Events</div>
+        <div class="value">${totalEvents}</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Files Modified</div>
+        <div class="value">${allFiles.size}</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Total Commits</div>
+        <div class="value">${totalCommits}</div>
+      </div>
+    </div>
+
+    <div class="logs-container">
+      ${logs.length > 0
+        ? logsHTML
+        : '<div class="no-logs"><p>No session logs found for the selected criteria.</p></div>'
+      }
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+// Helper to escape HTML entities
+function escapeHTML(str: string): string {
+  const div = { textContent: str } as any;
+  const text = div.textContent || '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 // Create Bun server
 const server = Bun.serve({
   port: SERVER_PORT,
@@ -540,6 +889,75 @@ const server = Bun.serve({
         return new Response(JSON.stringify({ cells, maxCount }), { headers: jsonHeaders });
       } catch (error: any) {
         console.error('[Heatmap API] Error:', error);
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
+    }
+
+    // GET /api/export/report - Generate HTML report (E6-S2)
+    if (url.pathname === '/api/export/report' && req.method === 'GET') {
+      try {
+        const project = url.searchParams.get('project');
+        const fromParam = url.searchParams.get('from');
+        const toParam = url.searchParams.get('to');
+        const sessionId = url.searchParams.get('sessionId');
+
+        // Build query to fetch dev logs
+        let sql = 'SELECT * FROM dev_logs WHERE 1=1';
+        const params: any[] = [];
+
+        // Filter by project
+        if (project && project !== 'all') {
+          sql += ' AND project_name = ?';
+          params.push(project);
+        }
+
+        // Filter by session
+        if (sessionId) {
+          sql += ' AND session_id = ?';
+          params.push(sessionId);
+        }
+
+        // Filter by date range
+        if (fromParam) {
+          const fromTimestamp = parseInt(fromParam);
+          if (!isNaN(fromTimestamp)) {
+            sql += ' AND ended_at >= ?';
+            params.push(fromTimestamp);
+          }
+        }
+
+        if (toParam) {
+          const toTimestamp = parseInt(toParam);
+          if (!isNaN(toTimestamp)) {
+            sql += ' AND ended_at <= ?';
+            params.push(toTimestamp);
+          }
+        }
+
+        sql += ' ORDER BY ended_at DESC';
+
+        const stmt = getDb().prepare(sql);
+        const logs = stmt.all(...params) as any[];
+
+        // Generate HTML report
+        const html = generateHTMLReport(logs, {
+          project,
+          sessionId,
+          from: fromParam,
+          to: toParam
+        });
+
+        return new Response(html, {
+          headers: {
+            ...headers,
+            'Content-Type': 'text/html; charset=utf-8',
+            'Content-Disposition': `attachment; filename="devpulse-report-${Date.now()}.html"`
+          }
+        });
+      } catch (error: any) {
+        console.error('[Export Report API] Error:', error);
         return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
           status: 500, headers: jsonHeaders
         });

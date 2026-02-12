@@ -219,9 +219,16 @@
           </div>
         </div>
 
-        <!-- Last activity -->
-        <div class="text-xs text-[var(--theme-text-quaternary)] pt-1 border-t border-[var(--theme-border-secondary)]">
-          Last activity: {{ timeAgo(project.last_activity) }}
+        <!-- Last activity and export -->
+        <div class="flex items-center justify-between pt-1 border-t border-[var(--theme-border-secondary)]">
+          <div class="text-xs text-[var(--theme-text-quaternary)]">
+            Last activity: {{ timeAgo(project.last_activity) }}
+          </div>
+          <ExportDropdown
+            :dev-logs="[]"
+            :project-filter="project.name"
+            button-title="Export logs for this project"
+          />
         </div>
       </div>
     </div>
@@ -233,6 +240,7 @@
 <script setup lang="ts">
 import type { Project, Session } from '../types';
 import HealthRing from './HealthRing.vue';
+import ExportDropdown from './ExportDropdown.vue';
 
 const props = defineProps<{
   projects: Project[];

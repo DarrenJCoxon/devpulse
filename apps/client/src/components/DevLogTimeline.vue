@@ -1,14 +1,26 @@
 <template>
-  <div class="space-y-3 p-4">
-    <!-- Empty state -->
-    <div v-if="filteredLogs.length === 0" class="flex flex-col items-center justify-center py-16 text-[var(--theme-text-tertiary)]">
-      <span class="text-4xl mb-3">📝</span>
-      <p class="text-lg font-medium">No session logs yet</p>
-      <p class="text-sm mt-1">Complete a Claude Code session to see summaries here</p>
+  <div class="flex flex-col h-full">
+    <!-- Header with export button -->
+    <div class="px-4 py-3 border-b border-[var(--theme-border-secondary)] flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-[var(--theme-text-primary)]">Dev Logs</h2>
+      <ExportDropdown
+        :dev-logs="devLogs"
+        :project-filter="projectFilter"
+        button-title="Export dev logs"
+      />
     </div>
 
-    <!-- Log entries -->
-    <div
+    <!-- Content area -->
+    <div class="flex-1 overflow-y-auto space-y-3 p-4">
+      <!-- Empty state -->
+      <div v-if="filteredLogs.length === 0" class="flex flex-col items-center justify-center py-16 text-[var(--theme-text-tertiary)]">
+        <span class="text-4xl mb-3">📝</span>
+        <p class="text-lg font-medium">No session logs yet</p>
+        <p class="text-sm mt-1">Complete a Claude Code session to see summaries here</p>
+      </div>
+
+      <!-- Log entries -->
+      <div
       v-for="log in filteredLogs"
       :key="log.id"
       class="bg-[var(--theme-bg-primary)] rounded-xl border border-[var(--theme-border-primary)] shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden"
@@ -125,12 +137,14 @@
         </div>
       </div>
     </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import type { DevLog } from '../types';
+import ExportDropdown from './ExportDropdown.vue';
 
 const props = defineProps<{
   devLogs: DevLog[];

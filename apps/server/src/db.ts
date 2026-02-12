@@ -68,6 +68,7 @@ export function initDatabase(): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_session_id ON events(session_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_hook_event_type ON events(hook_event_type)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_timestamp ON events(timestamp)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_events_session_source_time ON events(session_id, source_app, timestamp)');
   
   // Create themes table
   db.exec(`

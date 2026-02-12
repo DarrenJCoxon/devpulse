@@ -180,9 +180,11 @@ export function updateCostEstimate(
  * Optionally filter by date range.
  */
 export function getCostsByProject(startDate?: number, endDate?: number): ProjectCost[] {
+  // Single query that fetches both project totals and model distribution via GROUP BY
   let query = `
     SELECT
       project_name,
+      model_name,
       SUM(estimated_cost_usd) as total_cost_usd,
       SUM(estimated_input_tokens) as total_input_tokens,
       SUM(estimated_output_tokens) as total_output_tokens,
@@ -207,47 +209,36 @@ export function getCostsByProject(startDate?: number, endDate?: number): Project
     query += ' WHERE ' + conditions.join(' AND ');
   }
 
-  query += ' GROUP BY project_name ORDER BY total_cost_usd DESC';
+  query += ' GROUP BY project_name, model_name ORDER BY project_name, total_cost_usd DESC';
 
   const rows = db.prepare(query).all(...params) as any[];
 
-  // Get model distribution for each project
-  const projects: ProjectCost[] = rows.map(row => {
-    const modelDistribution: Record<string, number> = {};
+  // Aggregate rows by project_name
+  const projectMap = new Map<string, ProjectCost>();
 
-    // Query model distribution for this project
-    let modelQuery = `
-      SELECT model_name, COUNT(*) as count
-      FROM cost_estimates
-      WHERE project_name = ?
-    `;
-
-    const modelParams: any[] = [row.project_name];
-
-    if (conditions.length > 0) {
-      modelQuery += ' AND ' + conditions.join(' AND ');
-      modelParams.push(...params.slice(1)); // Skip project_name param
+  for (const row of rows) {
+    let project = projectMap.get(row.project_name);
+    if (!project) {
+      project = {
+        project_name: row.project_name,
+        total_cost_usd: 0,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        session_count: 0,
+        model_distribution: {}
+      };
+      projectMap.set(row.project_name, project);
     }
 
-    modelQuery += ' GROUP BY model_name';
+    project.total_cost_usd += row.total_cost_usd || 0;
+    project.total_input_tokens += row.total_input_tokens || 0;
+    project.total_output_tokens += row.total_output_tokens || 0;
+    project.session_count += row.session_count || 0;
+    project.model_distribution[row.model_name] = row.session_count || 0;
+  }
 
-    const modelRows = db.prepare(modelQuery).all(...modelParams) as any[];
-
-    for (const modelRow of modelRows) {
-      modelDistribution[modelRow.model_name] = modelRow.count;
-    }
-
-    return {
-      project_name: row.project_name,
-      total_cost_usd: row.total_cost_usd || 0,
-      total_input_tokens: row.total_input_tokens || 0,
-      total_output_tokens: row.total_output_tokens || 0,
-      session_count: row.session_count || 0,
-      model_distribution: modelDistribution
-    };
-  });
-
-  return projects;
+  // Sort by total cost descending
+  return Array.from(projectMap.values()).sort((a, b) => b.total_cost_usd - a.total_cost_usd);
 }
 
 /**

@@ -12,7 +12,48 @@ export default {
         'short': {'raw': '(max-height: 400px)'}, // Custom breakpoint for height <= 400px
       },
       colors: {
-        // Theme-aware colors using CSS custom properties
+        // shadcn-vue color system (HSL via CSS variables)
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
+        },
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
+        },
+        // Status colors
+        'status-active': 'hsl(var(--status-active))',
+        'status-idle': 'hsl(var(--status-idle))',
+        'status-stopped': 'hsl(var(--status-stopped))',
+        'status-error': 'hsl(var(--status-error))',
+        'status-success': 'hsl(var(--status-success))',
+
+        // Legacy theme-aware colors using CSS custom properties (kept for existing components)
         'theme': {
           'primary': 'var(--theme-primary)',
           'primary-hover': 'var(--theme-primary-hover)',
@@ -43,6 +84,11 @@ export default {
           }
         }
       },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
+      },
       boxShadow: {
         'theme': 'var(--theme-shadow)',
         'theme-lg': 'var(--theme-shadow-lg)',
@@ -50,10 +96,21 @@ export default {
       transitionProperty: {
         'theme': 'var(--theme-transition)',
         'theme-fast': 'var(--theme-transition-fast)',
-      }
+      },
+      keyframes: {
+        'pulse-dot': {
+          '0%, 100%': { opacity: 1 },
+          '50%': { opacity: 0.5 },
+        },
+      },
+      animation: {
+        'pulse-dot': 'pulse-dot 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+      },
     },
   },
-  plugins: [],
+  plugins: [
+    require('tailwindcss-animate'),
+  ],
   safelist: [
     // Background colors
     'bg-blue-500',

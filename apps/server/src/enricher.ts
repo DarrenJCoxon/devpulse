@@ -10,12 +10,18 @@
  */
 
 import { Database } from 'bun:sqlite';
+import { mkdirSync, existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import type { HookEvent, Project, Session, SessionStatus, TestStatus, DevLog, ProjectStatus, AgentNode } from './types';
 import { parseBranchToTask } from './branch-parser';
 import { initCosts, estimateTokensFromEvent, updateCostEstimate } from './costs';
-import { initConflicts, trackFileAccess } from './conflicts';
+import { initConflicts, trackFileAccess, cleanupOldFileAccess } from './conflicts';
 
 let db: Database;
+
+// Throttle health recalculation: only recalculate per project every 30 seconds
+const healthCalcTimestamps = new Map<string, number>();
+const HEALTH_CALC_THROTTLE_MS = 30_000;
 
 export function initEnricher(database: Database): void {
   db = database;
@@ -340,17 +346,19 @@ export function enrichEvent(event: HookEvent): void {
     case 'Notification':
       // Agent is waiting for user input
       updateSessionStatus(sessionId, event.source_app, 'waiting', now);
+      if (branch) updateSessionBranch(sessionId, event.source_app, branch);
       break;
 
     case 'UserPromptSubmit':
-      // User responded, agent is active again
+      // User responded, agent is active again — good time to detect branch changes
       updateSessionStatus(sessionId, event.source_app, 'active', now);
+      if (branch) updateSessionBranch(sessionId, event.source_app, branch);
       break;
 
     case 'PreToolUse':
     case 'PostToolUse':
       // Agent is actively working
-      updateSessionActivity(sessionId, event.source_app, now);
+      updateSessionActivity(sessionId, event.source_app, now, branch);
       detectTestResults(event, projectName);
       detectDevServers(event, projectName);
       // Track file access for conflict detection (E4-S5)
@@ -360,39 +368,43 @@ export function enrichEvent(event: HookEvent): void {
       break;
 
     case 'PostToolUseFailure':
-      updateSessionActivity(sessionId, event.source_app, now);
+      updateSessionActivity(sessionId, event.source_app, now, branch);
       break;
 
     case 'SubagentStart':
       handleSubagentStart(event, now);
-      updateSessionActivity(sessionId, event.source_app, now);
+      updateSessionActivity(sessionId, event.source_app, now, branch);
       break;
 
     case 'SubagentStop':
       handleSubagentStop(event, now);
-      updateSessionActivity(sessionId, event.source_app, now);
+      updateSessionActivity(sessionId, event.source_app, now, branch);
       break;
 
     case 'PreCompact':
       // Track context window compactions (E4-S3)
       handlePreCompact(sessionId, event.source_app, now);
-      updateSessionActivity(sessionId, event.source_app, now);
+      updateSessionActivity(sessionId, event.source_app, now, branch);
       break;
 
     default:
-      updateSessionActivity(sessionId, event.source_app, now);
+      updateSessionActivity(sessionId, event.source_app, now, branch);
       // Update topology last_event_at for any active topology node
       updateTopologyActivity(sessionId, event.source_app, now);
       break;
   }
 
-  // Calculate and update health score for this project (E5-S4)
-  try {
-    const health = calculateProjectHealth(projectName);
-    db.prepare('UPDATE projects SET health = ?, updated_at = ? WHERE name = ?')
-      .run(JSON.stringify(health), now, projectName);
-  } catch (error) {
-    console.error('[Health] Error calculating project health:', error);
+  // Calculate and update health score for this project (E5-S4) - throttled to once per 30s per project
+  const lastHealthCalc = healthCalcTimestamps.get(projectName) || 0;
+  if (now - lastHealthCalc > HEALTH_CALC_THROTTLE_MS) {
+    try {
+      const health = calculateProjectHealth(projectName);
+      db.prepare('UPDATE projects SET health = ?, updated_at = ? WHERE name = ?')
+        .run(JSON.stringify(health), now, projectName);
+      healthCalcTimestamps.set(projectName, now);
+    } catch (error) {
+      console.error('[Health] Error calculating project health:', error);
+    }
   }
 }
 
@@ -470,9 +482,11 @@ function updateSessionStatus(sessionId: string, sourceApp: string, status: Sessi
   ).run(status, now, sessionId, sourceApp);
 }
 
-function updateSessionActivity(sessionId: string, sourceApp: string, now: number): void {
+function updateSessionActivity(sessionId: string, sourceApp: string, now: number, branch?: string): void {
+  // Set status back to 'active' — this handles the case where a Notification set it to 'waiting'
+  // and the agent resumed working (tool use events arriving means it's active)
   db.prepare(
-    'UPDATE sessions SET last_event_at = ?, event_count = event_count + 1 WHERE session_id = ? AND source_app = ?'
+    "UPDATE sessions SET status = 'active', last_event_at = ?, event_count = event_count + 1 WHERE session_id = ? AND source_app = ? AND status != 'stopped'"
   ).run(now, sessionId, sourceApp);
 
   // Also ensure session exists (in case we missed SessionStart)
@@ -481,20 +495,90 @@ function updateSessionActivity(sessionId: string, sourceApp: string, now: number
   ).get(sessionId, sourceApp) as any;
 
   if (!existing) {
-    upsertSession(sessionId, sourceApp, sourceApp, 'active', '', now, '', '');
+    upsertSession(sessionId, sourceApp, sourceApp, 'active', branch || '', now, '', '');
   }
+
+  // Update branch + task_context if it changed
+  if (branch) {
+    updateSessionBranch(sessionId, sourceApp, branch);
+  }
+}
+
+/**
+ * Update a session's branch and task_context when the git branch changes.
+ * Only writes to the DB if the branch actually differs from the stored value.
+ */
+function updateSessionBranch(sessionId: string, sourceApp: string, newBranch: string): void {
+  const session = db.prepare(
+    'SELECT current_branch FROM sessions WHERE session_id = ? AND source_app = ?'
+  ).get(sessionId, sourceApp) as any;
+
+  if (!session || session.current_branch === newBranch) return;
+
+  const taskContext = parseBranchToTask(newBranch);
+  db.prepare(
+    'UPDATE sessions SET current_branch = ?, task_context = ? WHERE session_id = ? AND source_app = ?'
+  ).run(newBranch, JSON.stringify(taskContext), sessionId, sourceApp);
 }
 
 // --- Detection helpers ---
 
+// Cache for git branch detection — avoids running git on every event
+const branchCache = new Map<string, { branch: string; timestamp: number }>();
+const BRANCH_CACHE_TTL = 15_000; // 15 seconds
+
+/**
+ * Detect the current git branch from a working directory.
+ * Caches the result for 15 seconds per directory to avoid excessive git calls.
+ */
+function detectGitBranch(cwd: string): string {
+  if (!cwd) return '';
+
+  const cached = branchCache.get(cwd);
+  if (cached && Date.now() - cached.timestamp < BRANCH_CACHE_TTL) {
+    return cached.branch;
+  }
+
+  try {
+    const result = Bun.spawnSync(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const branch = result.stdout.toString().trim();
+    if (branch && branch !== 'HEAD') {
+      branchCache.set(cwd, { branch, timestamp: Date.now() });
+      // Evict oldest entries if cache exceeds max size
+      if (branchCache.size > 50) {
+        let oldestKey = '';
+        let oldestTime = Infinity;
+        for (const [key, val] of branchCache) {
+          if (val.timestamp < oldestTime) {
+            oldestTime = val.timestamp;
+            oldestKey = key;
+          }
+        }
+        if (oldestKey) branchCache.delete(oldestKey);
+      }
+      return branch;
+    }
+  } catch {
+    // Not a git repo or git not available — ignore
+  }
+
+  return '';
+}
+
 function extractBranch(event: HookEvent): string {
-  // Try to get branch from payload cwd-based git detection
-  // The hook scripts already run in the project directory
   const payload = event.payload || {};
 
-  // Some hooks include git info in their payload
+  // First try payload-provided branch
   if (payload.branch) return payload.branch;
   if (payload.git_branch) return payload.git_branch;
+
+  // Then actively detect from cwd
+  const cwd = payload.cwd || '';
+  if (cwd) return detectGitBranch(cwd);
 
   return '';
 }
@@ -609,41 +693,55 @@ function generateDevLog(sessionId: string, projectName: string, sourceApp: strin
 
   if (!session) return;
 
-  // Count events and build tool breakdown
-  const events = db.prepare(
-    "SELECT hook_event_type, payload FROM events WHERE session_id = ? AND source_app = ?"
-  ).all(sessionId, sourceApp) as any[];
+  // Count events and build tool breakdown - only extract needed fields via json_extract
+  const events = db.prepare(`
+    SELECT
+      hook_event_type,
+      json_extract(payload, '$.tool_name') as tool_name,
+      json_extract(payload, '$.tool_input.file_path') as file_path,
+      json_extract(payload, '$.tool_input.path') as alt_path,
+      json_extract(payload, '$.tool_input.command') as command
+    FROM events
+    WHERE session_id = ? AND source_app = ?
+  `).all(sessionId, sourceApp) as any[];
 
   const toolBreakdown: Record<string, number> = {};
   const filesChanged = new Set<string>();
   const commits: string[] = [];
 
   for (const evt of events) {
-    let payload: any;
-    try {
-      payload = typeof evt.payload === 'string' ? JSON.parse(evt.payload) : evt.payload;
-    } catch {
-      continue;
-    }
-
     // Track tool usage
-    const toolName = payload?.tool_name || '';
+    const toolName = evt.tool_name || '';
     if (toolName) {
       toolBreakdown[toolName] = (toolBreakdown[toolName] || 0) + 1;
     }
 
     // Track files from Write/Edit/Read tool uses
     if (['Write', 'Edit', 'Read'].includes(toolName)) {
-      const filePath = payload?.tool_input?.file_path || payload?.tool_input?.path || '';
+      const filePath = evt.file_path || evt.alt_path || '';
       if (filePath) filesChanged.add(filePath);
     }
 
     // Track git commits from Bash commands
     if (toolName === 'Bash') {
-      const cmd = payload?.tool_input?.command || '';
+      const cmd = evt.command || '';
       if (/git\s+commit/.test(cmd)) {
-        const msgMatch = cmd.match(/-m\s+["'](.+?)["']/);
-        if (msgMatch) commits.push(msgMatch[1]);
+        // Try simple -m "message" format first
+        const simpleMatch = cmd.match(/-m\s+["'](.+?)["']/);
+        if (simpleMatch) {
+          commits.push(simpleMatch[1]);
+        } else {
+          // Handle heredoc format: -m "$(cat <<'EOF'\nActual message\n...\nEOF\n)"
+          const heredocMatch = cmd.match(/<<['"]?EOF['"]?\s*\n([\s\S]*?)\n\s*EOF/);
+          if (heredocMatch) {
+            // Extract the first line as the commit message (before Co-Authored-By etc.)
+            const lines = heredocMatch[1].trim().split('\n');
+            const messageLine = lines[0]?.trim();
+            if (messageLine && !messageLine.startsWith('Co-Authored')) {
+              commits.push(messageLine);
+            }
+          }
+        }
       }
     }
   }
@@ -654,10 +752,9 @@ function generateDevLog(sessionId: string, projectName: string, sourceApp: strin
   ).get(sessionId, sourceApp) as any;
 
   const branch = session.current_branch || 'main';
-  const summary = lastEvent?.summary || buildAutoSummary(toolBreakdown, filesChanged.size, commits.length, projectName, branch);
-
   const startedAt = session.started_at;
   const durationMinutes = Math.round((now - startedAt) / 60000);
+  const summary = lastEvent?.summary || buildAutoSummary(toolBreakdown, filesChanged.size, commits.length, projectName, branch, filesChanged, commits, durationMinutes);
 
   db.prepare(`
     INSERT INTO dev_logs (session_id, source_app, project_name, branch, summary, files_changed, commits, started_at, ended_at, duration_minutes, event_count, tool_breakdown)
@@ -676,6 +773,21 @@ function generateDevLog(sessionId: string, projectName: string, sourceApp: strin
     events.length,
     JSON.stringify(toolBreakdown)
   );
+
+  // Write markdown dev note to the project's docs/dev-notes/ folder
+  writeDevNoteMarkdown({
+    projectName,
+    branch,
+    summary,
+    filesChanged: [...filesChanged],
+    commits,
+    startedAt,
+    endedAt: now,
+    durationMinutes,
+    eventCount: events.length,
+    toolBreakdown,
+    cwd: session.cwd,
+  });
 }
 
 function buildAutoSummary(
@@ -683,21 +795,234 @@ function buildAutoSummary(
   fileCount: number,
   commitCount: number,
   projectName: string,
-  branch: string
+  branch: string,
+  filesChanged?: Set<string>,
+  commits?: string[],
+  durationMinutes?: number
 ): string {
-  const parts: string[] = [];
-
   const writes = (toolBreakdown['Write'] || 0) + (toolBreakdown['Edit'] || 0);
-  const reads = toolBreakdown['Read'] || 0;
+  const newFiles = toolBreakdown['Write'] || 0;
+  const edits = toolBreakdown['Edit'] || 0;
   const bashOps = toolBreakdown['Bash'] || 0;
+  const searches = (toolBreakdown['Glob'] || 0) + (toolBreakdown['Grep'] || 0);
+  const subagents = toolBreakdown['Task'] || 0;
 
-  if (writes > 0) parts.push(`${writes} file edit${writes > 1 ? 's' : ''}`);
-  if (reads > 0) parts.push(`${reads} file read${reads > 1 ? 's' : ''}`);
-  if (bashOps > 0) parts.push(`${bashOps} command${bashOps > 1 ? 's' : ''}`);
-  if (commitCount > 0) parts.push(`${commitCount} commit${commitCount > 1 ? 's' : ''}`);
+  // Humanize the branch name for the summary
+  const branchDisplay = branch
+    .replace(/^[a-zA-Z]+\//, '')
+    .replace(/^[\d.]+[-_]/, '')
+    .replace(/^[A-Z]+-\d+[-_]/, '')
+    .replace(/[-_]+/g, ' ')
+    .trim() || branch;
 
-  if (parts.length === 0) return `Brief session on ${projectName}/${branch}`;
-  return `${parts.join(', ')} across ${fileCount} file${fileCount !== 1 ? 's' : ''} on ${branch}`;
+  // Determine the primary activity
+  const activities: string[] = [];
+
+  if (writes === 0 && bashOps === 0 && searches > 0) {
+    activities.push('Explored and reviewed the codebase');
+  } else if (writes > 0) {
+    if (newFiles > 5 && edits < newFiles) {
+      activities.push(`Created ${newFiles} new files and scaffolded project structure`);
+    } else if (newFiles > 0 && edits > 0) {
+      activities.push(`Created ${newFiles} new file${newFiles > 1 ? 's' : ''} and edited ${edits} existing file${edits > 1 ? 's' : ''}`);
+    } else if (edits > 0) {
+      activities.push(`Made changes across ${fileCount} file${fileCount !== 1 ? 's' : ''}`);
+    } else {
+      activities.push(`Created ${newFiles} new file${newFiles > 1 ? 's' : ''}`);
+    }
+  }
+
+  if (bashOps > 10) {
+    activities.push('ran tests and build commands');
+  } else if (bashOps > 0) {
+    activities.push('ran commands');
+  }
+
+  if (commitCount > 0) {
+    activities.push(`committed ${commitCount} change${commitCount > 1 ? 's' : ''}`);
+  }
+
+  if (subagents > 0) {
+    activities.push(`delegated ${subagents} task${subagents > 1 ? 's' : ''} to helper agents`);
+  }
+
+  if (activities.length === 0) {
+    return `Brief review session on ${branchDisplay}`;
+  }
+
+  // Capitalise first activity, join the rest with commas
+  const firstActivity = activities[0] ?? '';
+  const first = firstActivity.charAt(0).toUpperCase() + firstActivity.slice(1);
+  if (activities.length === 1) {
+    return `${first} for ${branchDisplay}.`;
+  }
+
+  const rest = activities.slice(1);
+  const last = rest.pop();
+  const middle = rest.length > 0 ? rest.join(', ') + ', and ' : '';
+  return `${first}, ${middle}${last} for ${branchDisplay}.`;
+}
+
+// --- Dev Note Markdown Writer ---
+
+interface DevNoteData {
+  projectName: string;
+  branch: string;
+  summary: string;
+  filesChanged: string[];
+  commits: string[];
+  startedAt: number;
+  endedAt: number;
+  durationMinutes: number;
+  eventCount: number;
+  toolBreakdown: Record<string, number>;
+  cwd: string;
+}
+
+/**
+ * Write a VitePress-compatible markdown dev note to the project's docs/dev-notes/ folder.
+ * Creates the directory if it doesn't exist. Silently fails if the project directory
+ * is not accessible (e.g., hooks from a remote machine).
+ */
+function writeDevNoteMarkdown(data: DevNoteData): void {
+  if (!data.cwd) return;
+
+  // Validate cwd is under a known project path before writing
+  const resolvedCwd = resolve(data.cwd);
+  const knownProjects = db.prepare('SELECT path FROM projects WHERE path != ""').all() as Array<{ path: string }>;
+  const isKnownProject = knownProjects.some(p => {
+    const resolvedProjectPath = resolve(p.path);
+    return resolvedCwd === resolvedProjectPath || resolvedCwd.startsWith(resolvedProjectPath + '/');
+  });
+  if (!isKnownProject) {
+    console.warn(`[DevNote] Skipping write: cwd "${data.cwd}" is not under any known project path`);
+    return;
+  }
+
+  try {
+    const docsDir = join(data.cwd, 'docs', 'dev-notes');
+
+    // Create docs/dev-notes/ if it doesn't exist
+    if (!existsSync(docsDir)) {
+      mkdirSync(docsDir, { recursive: true });
+    }
+
+    const startDate = new Date(data.startedAt);
+    const endDate = new Date(data.endedAt);
+
+    // File name: YYYY-MM-DD-HHmm-branch-slug.md
+    const datePrefix = startDate.toISOString().slice(0, 10);
+    const timePrefix = startDate.toISOString().slice(11, 16).replace(':', '');
+    const branchSlug = data.branch
+      .replace(/^[a-zA-Z]+\//, '')  // strip prefix like feature/
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 50);
+    const fileName = `${datePrefix}-${timePrefix}-${branchSlug}.md`;
+    const filePath = join(docsDir, fileName);
+
+    // Don't overwrite existing notes
+    if (existsSync(filePath)) return;
+
+    // Format time strings
+    const timeStr = (d: Date) => d.toLocaleTimeString('en-US', {
+      hour: 'numeric', minute: '2-digit', hour12: true,
+    });
+    const dateStr = startDate.toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+
+    // Humanize branch
+    const branchDisplay = data.branch
+      .replace(/^[a-zA-Z]+\//, '')
+      .replace(/^[\d.]+[-_]/, '')
+      .replace(/^[A-Z]+-\d+[-_]/, '')
+      .replace(/[-_]+/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase())
+      .trim() || data.branch;
+
+    // Filter garbage commits
+    const cleanCommits = data.commits.filter(c => {
+      if (!c || c.trim().length < 3) return false;
+      if (c.includes('$(cat') || c.includes('<<') || c.includes('EOF')) return false;
+      if (c.startsWith('Co-Authored')) return false;
+      return true;
+    });
+
+    // Extract just filenames (not full paths) and deduplicate
+    const fileNames = [...new Set(data.filesChanged.map(f => {
+      const parts = f.replace(/\\/g, '/').split('/');
+      return parts[parts.length - 1] || f;
+    }))];
+
+    // Build markdown content
+    const lines: string[] = [];
+
+    // VitePress frontmatter
+    lines.push('---');
+    lines.push(`title: "${branchDisplay}"`);
+    lines.push(`date: ${startDate.toISOString()}`);
+    lines.push(`project: ${data.projectName}`);
+    lines.push(`branch: ${data.branch}`);
+    lines.push(`duration: ${data.durationMinutes} minutes`);
+    lines.push(`files_changed: ${fileNames.length}`);
+    lines.push(`commits: ${cleanCommits.length}`);
+    lines.push('---');
+    lines.push('');
+
+    // Heading
+    lines.push(`# ${branchDisplay}`);
+    lines.push('');
+
+    // Meta line
+    lines.push(`> **${dateStr}** | ${timeStr(startDate)} - ${timeStr(endDate)} | ${data.durationMinutes} min | ${data.eventCount} events`);
+    lines.push('');
+
+    // Summary
+    if (data.summary) {
+      lines.push(`## Summary`);
+      lines.push('');
+      lines.push(data.summary);
+      lines.push('');
+    }
+
+    // Commits
+    if (cleanCommits.length > 0) {
+      lines.push(`## Commits`);
+      lines.push('');
+      for (const commit of cleanCommits) {
+        lines.push(`- ${commit}`);
+      }
+      lines.push('');
+    }
+
+    // Files changed
+    if (fileNames.length > 0) {
+      lines.push(`## Files Changed`);
+      lines.push('');
+      // Show first 20, then summarize
+      const shown = fileNames.slice(0, 20);
+      for (const file of shown) {
+        lines.push(`- \`${file}\``);
+      }
+      if (fileNames.length > 20) {
+        lines.push(`- ...and ${fileNames.length - 20} more`);
+      }
+      lines.push('');
+    }
+
+    // Branch info
+    lines.push('---');
+    lines.push('');
+    lines.push(`*Branch: \`${data.branch}\` | Project: ${data.projectName}*`);
+    lines.push('');
+
+    Bun.write(filePath, lines.join('\n'));
+    console.log(`[DevNote] Written: ${filePath}`);
+  } catch (error) {
+    // Silently fail - writing dev notes is best-effort
+    console.error('[DevNote] Error writing markdown:', error);
+  }
 }
 
 // --- Agent Topology operations (E4-S1) ---
@@ -892,9 +1217,12 @@ export function getProjectByName(name: string): Project | null {
 }
 
 export function getActiveSessions(): Session[] {
+  // Return all active/idle/waiting sessions, plus recently-stopped sessions (last 30 minutes)
+  // so the client can show a complete picture of recent activity
+  const thirtyMinutesAgo = Date.now() - 1800000;
   return db.prepare(
-    "SELECT * FROM sessions WHERE status IN ('active', 'waiting', 'idle') ORDER BY last_event_at DESC"
-  ).all() as Session[];
+    "SELECT * FROM sessions WHERE status IN ('active', 'waiting', 'idle') OR (status = 'stopped' AND last_event_at > ?) ORDER BY last_event_at DESC"
+  ).all(thirtyMinutesAgo) as Session[];
 }
 
 export function getSessionsForProject(projectName: string): Session[] {
@@ -928,18 +1256,46 @@ export function getProjectStatus(projectName: string): ProjectStatus | null {
 
 /**
  * Mark sessions as idle if they haven't had activity in the last 2 minutes.
+ * Mark idle/waiting sessions as stopped if they haven't had activity in the last 10 minutes.
+ * This handles the case where a user kills a terminal without sending a Stop event.
  * Called periodically by the server.
  */
 export function markIdleSessions(): void {
-  const twoMinutesAgo = Date.now() - 120000;
+  const now = Date.now();
+  const twoMinutesAgo = now - 120000;
+  const tenMinutesAgo = now - 600000;
+
+  // Step 1: Mark active sessions as idle after 2 minutes of inactivity
   db.prepare(
     "UPDATE sessions SET status = 'idle' WHERE status = 'active' AND last_event_at < ?"
   ).run(twoMinutesAgo);
 
-  // Update project session counts for affected projects
+  // Step 2: Mark idle/waiting sessions as stopped after 10 minutes of inactivity
+  // This catches sessions where the terminal was killed without a Stop event
+  const staleSessionsBefore = db.prepare(
+    "SELECT session_id, source_app, project_name FROM sessions WHERE status IN ('idle', 'waiting') AND last_event_at < ?"
+  ).all(tenMinutesAgo) as any[];
+
+  if (staleSessionsBefore.length > 0) {
+    db.prepare(
+      "UPDATE sessions SET status = 'stopped' WHERE status IN ('idle', 'waiting') AND last_event_at < ?"
+    ).run(tenMinutesAgo);
+
+    // Generate dev logs for these stale sessions
+    for (const stale of staleSessionsBefore) {
+      try {
+        generateDevLog(stale.session_id, stale.project_name, stale.source_app, now);
+      } catch (error) {
+        // Dev log generation is best-effort
+        console.error('[Enricher] Error generating dev log for stale session:', error);
+      }
+    }
+  }
+
+  // Update project session counts for all affected projects
   const affected = db.prepare(
-    "SELECT DISTINCT project_name FROM sessions WHERE status = 'idle' AND last_event_at < ?"
-  ).all(twoMinutesAgo) as any[];
+    "SELECT DISTINCT project_name FROM sessions WHERE (status = 'idle' AND last_event_at < ?) OR (status = 'stopped' AND last_event_at >= ? AND last_event_at < ?)"
+  ).all(twoMinutesAgo, tenMinutesAgo, now) as any[];
 
   for (const row of affected) {
     updateProjectSessionCount(row.project_name);
@@ -947,9 +1303,35 @@ export function markIdleSessions(): void {
     try {
       const health = calculateProjectHealth(row.project_name);
       db.prepare('UPDATE projects SET health = ?, updated_at = ? WHERE name = ?')
-        .run(JSON.stringify(health), Date.now(), row.project_name);
+        .run(JSON.stringify(health), now, row.project_name);
     } catch (error) {
       console.error('[Health] Error recalculating project health:', error);
+    }
+  }
+}
+
+/**
+ * Refresh current_branch for all known projects by running `git rev-parse` on their paths.
+ * This catches branch changes that happen between hook events (e.g. user switches branch
+ * in the terminal before a new Claude Code session starts sending events).
+ */
+export function refreshProjectBranches(): void {
+  const projects = db.prepare('SELECT name, path, current_branch FROM projects WHERE path != ""').all() as Array<{
+    name: string; path: string; current_branch: string;
+  }>;
+
+  for (const project of projects) {
+    const detectedBranch = detectGitBranch(project.path);
+    if (detectedBranch && detectedBranch !== project.current_branch) {
+      db.prepare('UPDATE projects SET current_branch = ?, updated_at = ? WHERE name = ?')
+        .run(detectedBranch, Date.now(), project.name);
+
+      // Also update any active/idle sessions for this project
+      const taskContext = parseBranchToTask(detectedBranch);
+      db.prepare(`
+        UPDATE sessions SET current_branch = ?, task_context = ?
+        WHERE project_name = ? AND status IN ('active', 'idle', 'waiting')
+      `).run(detectedBranch, JSON.stringify(taskContext), project.name);
     }
   }
 }
@@ -966,8 +1348,6 @@ export function cleanupOldSessions(): void {
  * Clean up old file access log entries and dismissed conflicts (older than 24 hours).
  */
 export function cleanupOldFileAccessLogs(): void {
-  // Import and call the cleanup function from conflicts module
-  const { cleanupOldFileAccess } = require('./conflicts');
   cleanupOldFileAccess();
 }
 
@@ -1122,40 +1502,28 @@ export async function scanPorts(): Promise<void> {
 
 /**
  * Update project dev_servers fields with scan results.
- * This merges scanned servers with event-detected servers.
+ * Only keeps servers that were previously event-detected for that project
+ * AND are still responding. Does not blindly assign all scanned ports to all projects.
  */
-function updateProjectDevServers(servers: Array<{port: number; type: string}>): void {
-  // Get all projects
+function updateProjectDevServers(scannedPorts: Array<{port: number; type: string}>): void {
+  const activePorts = new Set(scannedPorts.map(s => s.port));
+
   const projects = db.prepare('SELECT name, dev_servers FROM projects').all() as Array<{name: string; dev_servers: string}>;
 
   for (const project of projects) {
-    // Parse existing servers
     let existingServers: Array<{port: number; type: string}> = [];
     try {
       existingServers = JSON.parse(project.dev_servers || '[]');
     } catch {}
 
-    // Merge: keep event-detected servers, add/update with scan results
-    const mergedServers = [...existingServers];
+    // Only keep servers that this project already knew about AND are still responding
+    const stillActive = existingServers.filter(s => activePorts.has(s.port));
 
-    for (const scannedServer of servers) {
-      const existingIndex = mergedServers.findIndex(s => s.port === scannedServer.port);
-      if (existingIndex >= 0 && mergedServers[existingIndex]) {
-        // Update existing server type if scanned
-        mergedServers[existingIndex].type = scannedServer.type;
-      } else {
-        // Add new scanned server
-        mergedServers.push(scannedServer);
-      }
+    const prev = JSON.stringify(existingServers);
+    const next = JSON.stringify(stillActive);
+    if (prev !== next) {
+      db.prepare('UPDATE projects SET dev_servers = ?, updated_at = ? WHERE name = ?')
+        .run(next, Date.now(), project.name);
     }
-
-    // Remove servers that are no longer responding (not in scan results)
-    const activeServers = mergedServers.filter(server =>
-      servers.some(s => s.port === server.port)
-    );
-
-    // Update database
-    db.prepare('UPDATE projects SET dev_servers = ?, updated_at = ? WHERE name = ?')
-      .run(JSON.stringify(activeServers), Date.now(), project.name);
   }
 }

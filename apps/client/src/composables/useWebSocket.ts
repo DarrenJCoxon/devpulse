@@ -1,5 +1,5 @@
 import { ref, onMounted, onUnmounted } from 'vue';
-import type { HookEvent, WebSocketMessage, Project, Session, AgentNode, FileConflict } from '../types';
+import type { HookEvent, WebSocketMessage, Project, Session, AgentNode, FileConflict, DevLog } from '../types';
 
 export interface Alert {
   id: string;
@@ -16,6 +16,7 @@ export function useWebSocket(url: string) {
   const events = ref<HookEvent[]>([]);
   const projects = ref<Project[]>([]);
   const sessions = ref<Session[]>([]);
+  const devLogs = ref<DevLog[]>([]);
   const topology = ref<AgentNode[]>([]);
   const conflicts = ref<FileConflict[]>([]);
   const alerts = ref<Alert[]>([]);
@@ -24,6 +25,7 @@ export function useWebSocket(url: string) {
   
   let ws: WebSocket | null = null;
   let reconnectTimeout: number | null = null;
+  let reconnectAttempt = 0;
   
   // Get max events from environment variable or use default
   const maxEvents = parseInt(import.meta.env.VITE_MAX_EVENTS_TO_DISPLAY || '300');
@@ -36,6 +38,7 @@ export function useWebSocket(url: string) {
         console.log('WebSocket connected');
         isConnected.value = true;
         error.value = null;
+        reconnectAttempt = 0;
       };
       
       ws.onmessage = (event) => {
@@ -63,6 +66,8 @@ export function useWebSocket(url: string) {
             topology.value = Array.isArray(message.data) ? message.data as AgentNode[] : [];
           } else if (message.type === 'conflicts') {
             conflicts.value = Array.isArray(message.data) ? message.data as FileConflict[] : [];
+          } else if (message.type === 'devlogs') {
+            devLogs.value = Array.isArray(message.data) ? message.data as DevLog[] : [];
           } else if (message.type === 'alerts') {
             alerts.value = Array.isArray(message.data) ? message.data as Alert[] : [];
           }
@@ -79,12 +84,18 @@ export function useWebSocket(url: string) {
       ws.onclose = () => {
         console.log('WebSocket disconnected');
         isConnected.value = false;
-        
-        // Attempt to reconnect after 3 seconds
+
+        // Exponential backoff: 3s, 6s, 12s, 24s, ... capped at 60s, with jitter
+        const baseDelay = 3000 * Math.pow(2, reconnectAttempt);
+        const cappedDelay = Math.min(baseDelay, 60000);
+        const jitter = Math.random() * cappedDelay * 0.3;
+        const delay = cappedDelay + jitter;
+        reconnectAttempt++;
+
         reconnectTimeout = window.setTimeout(() => {
-          console.log('Attempting to reconnect...');
+          console.log(`Attempting to reconnect (attempt ${reconnectAttempt})...`);
           connect();
-        }, 3000);
+        }, delay);
       };
     } catch (err) {
       console.error('Failed to connect:', err);
@@ -120,6 +131,7 @@ export function useWebSocket(url: string) {
     events,
     projects,
     sessions,
+    devLogs,
     topology,
     conflicts,
     alerts,

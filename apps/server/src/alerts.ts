@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 
 export interface Alert {
-  id: string;              // Unique: `${type}-${sessionId}-${sourceApp}-${timestamp}`
+  id: string;              // Unique: `${type}-${sessionId}-${sourceApp}` (stable for dismiss tracking)
   type: 'stuck_agent' | 'excessive_writes' | 'repeated_failures';
   severity: 'warning' | 'critical';
   sessionId: string;
@@ -77,7 +77,7 @@ function checkStuckAgents(db: Database, thresholds: AlertThresholds): Alert[] {
     const minutesInactive = Math.floor((now - row.last_event_at) / 60000);
 
     alerts.push({
-      id: `stuck_agent-${row.session_id}-${row.source_app}-${now}`,
+      id: `stuck_agent-${row.session_id}-${row.source_app}`,
       type: 'stuck_agent',
       severity: 'warning',
       sessionId: row.session_id,
@@ -116,7 +116,7 @@ function checkExcessiveWrites(db: Database, thresholds: AlertThresholds): Alert[
     const windowSeconds = thresholds.excessiveWritesWindowMs / 1000;
 
     alerts.push({
-      id: `excessive_writes-${row.session_id}-${row.source_app}-${now}`,
+      id: `excessive_writes-${row.session_id}-${row.source_app}`,
       type: 'excessive_writes',
       severity: 'critical',
       sessionId: row.session_id,
@@ -157,7 +157,7 @@ function checkRepeatedFailures(db: Database, thresholds: AlertThresholds): Alert
     const severity = row.cnt > 10 ? 'critical' : 'warning';
 
     alerts.push({
-      id: `repeated_failures-${row.session_id}-${row.source_app}-${now}`,
+      id: `repeated_failures-${row.session_id}-${row.source_app}`,
       type: 'repeated_failures',
       severity,
       sessionId: row.session_id,

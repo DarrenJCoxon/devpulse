@@ -1,181 +1,369 @@
 <template>
-  <div class="h-screen flex flex-col bg-[var(--theme-bg-secondary)]">
-    <!-- Header with Primary Theme Colors -->
-    <header class="short:hidden bg-gradient-to-r from-[var(--theme-primary)] to-[var(--theme-primary-light)] shadow-lg border-b-2 border-[var(--theme-primary-dark)]">
-      <div class="px-3 py-4 mobile:py-1.5 mobile:px-2 flex items-center justify-between mobile:gap-2">
-        <!-- Title Section - Hidden on mobile -->
-        <div class="mobile:hidden">
-          <h1 class="text-2xl font-bold text-white drop-shadow-lg">
-            DevPulse
-          </h1>
-        </div>
+  <div class="h-screen flex flex-col bg-background text-foreground">
+    <!-- Simplified Header -->
+    <header class="border-b border-border bg-card">
+      <div class="max-w-6xl mx-auto w-full px-6 py-3 flex items-center justify-between">
+      <!-- Title + Connection -->
+      <div class="flex items-center gap-3">
+        <h1 class="text-lg font-bold tracking-tight">DevPulse</h1>
+        <span
+          class="relative flex h-2.5 w-2.5"
+          :title="isConnected ? 'Connected' : 'Disconnected'"
+          :aria-label="isConnected ? 'Connected to server' : 'Disconnected from server'"
+          role="status"
+        >
+          <span
+            v-if="isConnected"
+            class="animate-ping absolute inline-flex h-full w-full rounded-full bg-status-active opacity-75"
+          ></span>
+          <span
+            class="relative inline-flex rounded-full h-2.5 w-2.5"
+            :class="isConnected ? 'bg-status-active' : 'bg-destructive'"
+          ></span>
+        </span>
+        <!-- Cmd+K hint -->
+        <kbd class="hidden sm:inline-flex items-center gap-0.5 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+          <span class="text-xs">&#8984;</span>K
+        </kbd>
+      </div>
 
-        <!-- Connection Status -->
-        <div class="flex items-center mobile:space-x-1 space-x-1.5">
-          <div v-if="isConnected" class="flex items-center mobile:space-x-0.5 space-x-1.5">
-            <span class="relative flex mobile:h-2 mobile:w-2 h-3 w-3">
-              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-              <span class="relative inline-flex rounded-full mobile:h-2 mobile:w-2 h-3 w-3 bg-green-500"></span>
-            </span>
-            <span class="text-base mobile:text-xs text-white font-semibold drop-shadow-md mobile:hidden">Connected</span>
-          </div>
-          <div v-else class="flex items-center mobile:space-x-0.5 space-x-1.5">
-            <span class="relative flex mobile:h-2 mobile:w-2 h-3 w-3">
-              <span class="relative inline-flex rounded-full mobile:h-2 mobile:w-2 h-3 w-3 bg-red-500"></span>
-            </span>
-            <span class="text-base mobile:text-xs text-white font-semibold drop-shadow-md mobile:hidden">Disconnected</span>
-          </div>
-        </div>
-
-        <!-- Controls -->
-        <div class="flex items-center mobile:space-x-1 space-x-2">
-          <!-- Event count (always visible) -->
-          <span v-if="activeTab === 'events'" class="text-base mobile:text-xs text-white font-semibold drop-shadow-md bg-[var(--theme-primary-dark)] mobile:px-2 mobile:py-0.5 px-3 py-1.5 rounded-full border border-white/30">
-            {{ events.length }}
-          </span>
-
-          <!-- Clear Button (Events tab only) -->
+      <!-- Settings Gear -->
+      <DropdownMenu>
+        <DropdownMenuTrigger as-child>
           <button
-            v-if="activeTab === 'events'"
-            @click="handleClearClick"
-            class="p-3 mobile:p-1 rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 border border-white/30 hover:border-white/50 backdrop-blur-sm shadow-lg hover:shadow-xl"
-            title="Clear events"
+            class="p-2 rounded-md hover:bg-accent transition-colors relative"
+            title="Settings"
           >
-            <span class="text-2xl mobile:text-base">🗑️</span>
-          </button>
-
-          <!-- Search Toggle Button (Events tab only) -->
-          <button
-            v-if="activeTab === 'events'"
-            @click="showSearchPanel = !showSearchPanel"
-            class="p-3 mobile:p-1 rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 border border-white/30 hover:border-white/50 backdrop-blur-sm shadow-lg hover:shadow-xl"
-            :title="showSearchPanel ? 'Hide search' : 'Show search'"
-          >
-            <span class="text-2xl mobile:text-base">🔍</span>
-          </button>
-
-          <!-- Filters Toggle Button (Events tab only) -->
-          <button
-            v-if="activeTab === 'events'"
-            @click="showFilters = !showFilters"
-            class="p-3 mobile:p-1 rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 border border-white/30 hover:border-white/50 backdrop-blur-sm shadow-lg hover:shadow-xl"
-            :title="showFilters ? 'Hide filters' : 'Show filters'"
-          >
-            <span class="text-2xl mobile:text-base">📊</span>
-          </button>
-
-          <!-- Alerts Button (E5-S3) -->
-          <button
-            @click="showAlertPanel = !showAlertPanel"
-            class="p-3 mobile:p-1 rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 border border-white/30 hover:border-white/50 backdrop-blur-sm shadow-lg hover:shadow-xl relative"
-            title="Alerts"
-          >
-            <span class="text-2xl mobile:text-base">🔔</span>
-            <!-- Badge for active alerts -->
+            <Settings class="h-5 w-5 text-muted-foreground" />
+            <!-- Badge dot for active alerts or conflicts -->
             <span
-              v-if="activeAlertCount > 0"
-              class="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center border border-white animate-pulse"
-            >
-              {{ activeAlertCount }}
-            </span>
-          </button>
-
-          <!-- Conflicts Button (E4-S5) -->
-          <button
-            @click="showConflictPanel = !showConflictPanel"
-            class="p-3 mobile:p-1 rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 border border-white/30 hover:border-white/50 backdrop-blur-sm shadow-lg hover:shadow-xl relative"
-            title="File conflicts"
-          >
-            <span class="text-2xl mobile:text-base">⚠️</span>
-            <!-- Badge for high-severity conflicts -->
-            <span
-              v-if="highSeverityConflictCount > 0"
-              class="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center border border-white animate-pulse"
-            >
-              {{ highSeverityConflictCount }}
-            </span>
-            <!-- Badge for any conflicts -->
-            <span
-              v-else-if="conflicts.length > 0"
-              class="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-yellow-500 text-white text-xs font-bold flex items-center justify-center border border-white"
-            >
-              {{ conflicts.length }}
-            </span>
-          </button>
-
-          <!-- Notification Bell Button -->
-          <button
-            @click="showNotificationSettings = !showNotificationSettings"
-            class="p-3 mobile:p-1 rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 border border-white/30 hover:border-white/50 backdrop-blur-sm shadow-lg hover:shadow-xl relative"
-            title="Notification settings"
-          >
-            <span class="text-2xl mobile:text-base">🔔</span>
-            <!-- Indicator dot when notifications are enabled -->
-            <span
-              v-if="notificationSettings.enabled"
-              class="absolute top-1 right-1 h-2 w-2 rounded-full bg-green-500 border border-white"
+              v-if="activeAlertCount > 0 || highSeverityConflictCount > 0"
+              class="absolute top-1 right-1 h-2 w-2 rounded-full bg-destructive"
             ></span>
           </button>
-
-          <!-- Theme Manager Button -->
-          <button
-            @click="handleThemeManagerClick"
-            class="p-3 mobile:p-1 rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 border border-white/30 hover:border-white/50 backdrop-blur-sm shadow-lg hover:shadow-xl"
-            title="Open theme manager"
-          >
-            <span class="text-2xl mobile:text-base">🎨</span>
-          </button>
-
-          <!-- Retention Settings Button -->
-          <button
-            @click="showRetentionSettings = true"
-            class="p-3 mobile:p-1 rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 border border-white/30 hover:border-white/50 backdrop-blur-sm shadow-lg hover:shadow-xl"
-            title="Data retention settings"
-          >
-            <span class="text-2xl mobile:text-base">⚙️</span>
-          </button>
-
-          <!-- Command Palette Hint -->
-          <div
-            class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/20 border border-white/30 backdrop-blur-sm"
-            title="Open command palette"
-          >
-            <kbd class="px-1.5 py-0.5 text-xs font-semibold text-white bg-white/20 rounded border border-white/30">⌘K</kbd>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" class="w-64">
+          <!-- Sound Alerts Section -->
+          <div class="px-2 py-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <Volume2 v-if="soundSettings.enabled" class="h-4 w-4 text-muted-foreground" />
+                <VolumeX v-else class="h-4 w-4 text-muted-foreground" />
+                <span class="text-sm font-medium">Sound Alerts</span>
+              </div>
+              <Switch
+                :checked="soundSettings.enabled"
+                @update:checked="soundSettings.enabled = $event"
+              />
+            </div>
+            <div v-if="soundSettings.enabled" class="mt-2 px-1">
+              <Slider
+                :model-value="[soundSettings.volume]"
+                @update:model-value="soundSettings.volume = $event[0]"
+                :max="100"
+                :step="5"
+                class="w-full"
+              />
+              <span class="text-xs text-muted-foreground mt-1 block">Volume: {{ soundSettings.volume }}%</span>
+              <!-- Per-event toggles -->
+              <div class="mt-3 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs text-muted-foreground">Session finished</span>
+                  <Switch
+                    :checked="soundSettings.sessionEnd"
+                    @update:checked="soundSettings.sessionEnd = $event"
+                    class="scale-75"
+                  />
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-xs text-muted-foreground">Tests failing</span>
+                  <Switch
+                    :checked="soundSettings.testFail"
+                    @update:checked="soundSettings.testFail = $event"
+                    class="scale-75"
+                  />
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-xs text-muted-foreground">Tests passing</span>
+                  <Switch
+                    :checked="soundSettings.testPass"
+                    @update:checked="soundSettings.testPass = $event"
+                    class="scale-75"
+                  />
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-xs text-muted-foreground">Tool errors</span>
+                  <Switch
+                    :checked="soundSettings.toolFailure"
+                    @update:checked="soundSettings.toolFailure = $event"
+                    class="scale-75"
+                  />
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-xs text-muted-foreground">Waiting for input</span>
+                  <Switch
+                    :checked="soundSettings.waitingForInput"
+                    @update:checked="soundSettings.waitingForInput = $event"
+                    class="scale-75"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+          <DropdownMenuSeparator />
+
+          <!-- Dark Mode Toggle -->
+          <DropdownMenuItem @click="toggleDarkMode" class="cursor-pointer">
+            <Moon v-if="!isDark" class="h-4 w-4 mr-2" />
+            <Sun v-else class="h-4 w-4 mr-2" />
+            {{ isDark ? 'Light Mode' : 'Dark Mode' }}
+          </DropdownMenuItem>
+
+          <!-- Theme Manager -->
+          <DropdownMenuItem @click="showThemeManager = true" class="cursor-pointer">
+            <Palette class="h-4 w-4 mr-2" />
+            Theme Manager
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+
+          <!-- Notifications -->
+          <DropdownMenuItem @click="showNotificationSettings = true" class="cursor-pointer">
+            <Bell class="h-4 w-4 mr-2" />
+            Notifications
+            <span
+              v-if="notificationSettings.enabled"
+              class="ml-auto h-2 w-2 rounded-full bg-status-active"
+            ></span>
+          </DropdownMenuItem>
+
+          <!-- Alerts -->
+          <DropdownMenuItem @click="showAlertPanel = true" class="cursor-pointer">
+            <AlertTriangle class="h-4 w-4 mr-2" />
+            Alerts
+            <span
+              v-if="activeAlertCount > 0"
+              class="ml-auto text-xs font-bold text-destructive"
+            >{{ activeAlertCount }}</span>
+          </DropdownMenuItem>
+
+          <!-- Conflicts -->
+          <DropdownMenuItem @click="showConflictPanel = true" class="cursor-pointer">
+            <GitMerge class="h-4 w-4 mr-2" />
+            Conflicts
+            <span
+              v-if="conflicts.length > 0"
+              class="ml-auto text-xs font-bold"
+              :class="highSeverityConflictCount > 0 ? 'text-destructive' : 'text-status-idle'"
+            >{{ conflicts.length }}</span>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+
+          <!-- Retention Settings -->
+          <DropdownMenuItem @click="showRetentionSettings = true" class="cursor-pointer">
+            <Archive class="h-4 w-4 mr-2" />
+            Data Retention
+          </DropdownMenuItem>
+
+          <!-- Add Project -->
+          <DropdownMenuItem @click="showHookWizard = true" class="cursor-pointer">
+            <Plus class="h-4 w-4 mr-2" />
+            Add Project
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       </div>
     </header>
 
-    <!-- Tab Navigation -->
-    <nav class="flex border-b border-[var(--theme-border-primary)] bg-[var(--theme-bg-primary)] px-4 overflow-x-auto">
+    <!-- Tab Navigation: 3 primary tabs + More dropdown -->
+    <nav class="border-b border-border bg-card">
+      <div class="max-w-6xl mx-auto w-full px-6 flex items-center gap-1" role="tablist">
+      <!-- Primary Tabs -->
       <button
-        v-for="tab in tabs"
+        v-for="tab in primaryTabs"
         :key="tab.id"
         @click="activeTab = tab.id"
+        role="tab"
+        :aria-selected="activeTab === tab.id"
         class="px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap"
         :class="activeTab === tab.id
-          ? 'text-[var(--theme-primary)] border-b-2 border-[var(--theme-primary)]'
-          : 'text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-secondary)]'"
+          ? 'text-foreground border-b-2 border-primary'
+          : 'text-muted-foreground hover:text-foreground'"
       >
         {{ tab.label }}
       </button>
+
+      <!-- More Dropdown -->
+      <DropdownMenu>
+        <DropdownMenuTrigger as-child>
+          <button
+            class="px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap flex items-center gap-1"
+            :class="isAdvancedTabActive
+              ? 'text-foreground border-b-2 border-primary'
+              : 'text-muted-foreground hover:text-foreground'"
+          >
+            {{ activeAdvancedTabLabel || 'More' }}
+            <ChevronDown class="h-3.5 w-3.5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" class="w-48">
+          <!-- Monitoring -->
+          <div class="px-2 py-1.5">
+            <span class="text-xs uppercase text-muted-foreground font-semibold">Monitoring</span>
+          </div>
+          <DropdownMenuItem
+            v-for="tab in monitoringTabs"
+            :key="tab.id"
+            @click="activeTab = tab.id"
+            class="cursor-pointer"
+            :class="activeTab === tab.id ? 'bg-accent' : ''"
+          >
+            {{ tab.label }}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+
+          <!-- Analysis -->
+          <div class="px-2 py-1.5">
+            <span class="text-xs uppercase text-muted-foreground font-semibold">Analysis</span>
+          </div>
+          <DropdownMenuItem
+            v-for="tab in analysisTabs"
+            :key="tab.id"
+            @click="activeTab = tab.id"
+            class="cursor-pointer"
+            :class="activeTab === tab.id ? 'bg-accent' : ''"
+          >
+            {{ tab.label }}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+
+          <!-- Advanced -->
+          <div class="px-2 py-1.5">
+            <span class="text-xs uppercase text-muted-foreground font-semibold">Advanced</span>
+          </div>
+          <DropdownMenuItem
+            v-for="tab in advancedGroupTabs"
+            :key="tab.id"
+            @click="activeTab = tab.id"
+            class="cursor-pointer"
+            :class="activeTab === tab.id ? 'bg-accent' : ''"
+          >
+            {{ tab.label }}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+
+          <!-- Configuration -->
+          <div class="px-2 py-1.5">
+            <span class="text-xs uppercase text-muted-foreground font-semibold">Configuration</span>
+          </div>
+          <DropdownMenuItem
+            v-for="tab in configTabs"
+            :key="tab.id"
+            @click="activeTab = tab.id"
+            class="cursor-pointer"
+            :class="activeTab === tab.id ? 'bg-accent' : ''"
+          >
+            {{ tab.label }}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <!-- Events-specific controls (only when Events tab is active) -->
+      <div v-if="activeTab === 'events'" class="ml-auto flex items-center gap-1">
+        <span class="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-full font-medium">
+          {{ events.length }}
+        </span>
+        <button
+          @click="handleClearClick"
+          class="p-1.5 rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+          title="Clear events"
+        >
+          <Trash2 class="h-4 w-4" />
+        </button>
+        <button
+          @click="showSearchPanel = !showSearchPanel"
+          class="p-1.5 rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+          :title="showSearchPanel ? 'Hide search' : 'Show search'"
+        >
+          <Search class="h-4 w-4" />
+        </button>
+        <button
+          @click="showFilters = !showFilters"
+          class="p-1.5 rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+          :title="showFilters ? 'Hide filters' : 'Show filters'"
+        >
+          <Filter class="h-4 w-4" />
+        </button>
+      </div>
+      </div>
     </nav>
 
-    <!-- Alert Banner (E5-S3) - shown on all tabs when alerts present -->
+    <!-- Connection Status Banner -->
+    <div
+      v-if="!isConnected || showReconnected"
+      class="border-b transition-colors duration-300"
+      :class="showReconnected
+        ? 'bg-emerald-500/10 border-emerald-500/30'
+        : 'bg-amber-500/10 border-amber-500/30'"
+      role="alert"
+    >
+      <div class="max-w-6xl mx-auto w-full px-6 py-2 flex items-center gap-2 text-sm">
+        <template v-if="showReconnected">
+          <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+          <span class="text-emerald-700 dark:text-emerald-400 font-medium">Reconnected</span>
+        </template>
+        <template v-else>
+          <WifiOff class="h-4 w-4 text-amber-600 dark:text-amber-400" />
+          <span class="text-amber-700 dark:text-amber-400 font-medium">Connection lost &mdash; reconnecting...</span>
+        </template>
+      </div>
+    </div>
+
+    <!-- Alert Banner (shown on all tabs when alerts present) -->
     <AlertBanner
       v-if="!showAlertPanel"
       :alerts="activeAlerts"
       :dismiss-alert="dismissAlert"
     />
 
-    <!-- Projects Tab -->
-    <div v-if="activeTab === 'projects'" class="flex-1 overflow-auto">
+    <!-- ============ PRIMARY TABS ============ -->
+
+    <!-- Dashboard Tab (SimpleDashboard) -->
+    <div v-if="activeTab === 'dashboard'" class="flex-1 overflow-auto" role="tabpanel">
+      <SimpleDashboard
+        :projects="projects"
+        :sessions="sessions"
+        :events="events"
+        :dev-logs="devLogs"
+      />
+    </div>
+
+    <!-- Activity Tab (SimpleActivityFeed) -->
+    <div v-if="activeTab === 'activity'" class="flex-1 overflow-auto" role="tabpanel">
+      <SimpleActivityFeed
+        :events="events"
+        :sessions="sessions"
+        :projects="projects"
+      />
+    </div>
+
+    <!-- Dev Notes Tab (SimpleDevNotes) -->
+    <div v-if="activeTab === 'devnotes'" class="flex-1 overflow-auto" role="tabpanel">
+      <SimpleDevNotes
+        :dev-logs="devLogs"
+        :projects="projects"
+      />
+    </div>
+
+    <!-- ============ ADVANCED TABS (via More dropdown) ============ -->
+
+    <!-- Projects Tab (original ProjectOverview) -->
+    <div v-if="activeTab === 'projects'" class="flex-1 overflow-auto" role="tabpanel">
       <ProjectOverview :projects="projects" :sessions="sessions" @add-project="showHookWizard = true" />
     </div>
 
     <!-- Events Tab -->
     <template v-if="activeTab === 'events'">
-      <!-- Search Panel (conditionally shown when searching) -->
+      <!-- Search Panel -->
       <SearchPanel
         v-if="showSearchPanel"
         @close="showSearchPanel = false"
@@ -198,8 +386,8 @@
         @update-time-range="currentTimeRange = $event"
       />
 
-      <!-- Agent Swim Lane Container (below pulse chart, full width, hidden when empty) -->
-      <div v-if="selectedAgentLanes.length > 0" class="w-full bg-[var(--theme-bg-secondary)] px-3 py-4 mobile:px-2 mobile:py-2 overflow-hidden">
+      <!-- Agent Swim Lane Container -->
+      <div v-if="selectedAgentLanes.length > 0" class="w-full bg-muted px-3 py-4 mobile:px-2 mobile:py-2 overflow-hidden">
         <AgentSwimLaneContainer
           :selected-agents="selectedAgentLanes"
           :events="events"
@@ -229,12 +417,12 @@
     </template>
 
     <!-- Topology Tab -->
-    <div v-if="activeTab === 'topology'" class="flex-1 overflow-auto">
+    <div v-if="activeTab === 'topology'" class="flex-1 overflow-auto" role="tabpanel">
       <AgentTopology :topology="topology" />
     </div>
 
-    <!-- Dev Log Tab -->
-    <div v-if="activeTab === 'devlog'" class="flex-1 overflow-auto">
+    <!-- Dev Log Tab (original DevLogTimeline) -->
+    <div v-if="activeTab === 'devlog'" class="flex-1 overflow-auto" role="tabpanel">
       <DevLogTimeline
         v-if="!replaySession"
         :dev-logs="devLogs"
@@ -249,39 +437,39 @@
     </div>
 
     <!-- Summaries Tab -->
-    <div v-if="activeTab === 'summaries'" class="flex-1 overflow-auto">
+    <div v-if="activeTab === 'summaries'" class="flex-1 overflow-auto" role="tabpanel">
       <SummaryReport />
     </div>
 
     <!-- Costs Tab -->
-    <div v-if="activeTab === 'costs'" class="flex-1 overflow-auto">
+    <div v-if="activeTab === 'costs'" class="flex-1 overflow-auto" role="tabpanel">
       <CostDashboard />
     </div>
 
     <!-- Metrics Tab -->
-    <div v-if="activeTab === 'metrics'" class="flex-1 overflow-auto">
+    <div v-if="activeTab === 'metrics'" class="flex-1 overflow-auto" role="tabpanel">
       <AgentMetrics />
     </div>
 
     <!-- Analytics Tab -->
-    <div v-if="activeTab === 'analytics'" class="flex-1 overflow-auto p-4">
+    <div v-if="activeTab === 'analytics'" class="flex-1 overflow-auto p-4" role="tabpanel">
       <ActivityHeatmap :projects="projects" />
     </div>
 
     <!-- Webhooks Tab -->
-    <div v-if="activeTab === 'webhooks'" class="flex-1 overflow-auto">
+    <div v-if="activeTab === 'webhooks'" class="flex-1 overflow-auto" role="tabpanel">
       <WebhookManager />
     </div>
 
     <!-- API Docs Tab -->
-    <div v-if="activeTab === 'api-docs'" class="flex-1 overflow-auto">
+    <div v-if="activeTab === 'api-docs'" class="flex-1 overflow-auto" role="tabpanel">
       <ApiDocs />
     </div>
 
     <!-- Error message -->
     <div
       v-if="error"
-      class="fixed bottom-4 left-4 mobile:bottom-3 mobile:left-3 mobile:right-3 bg-red-100 border border-red-400 text-red-700 px-3 py-2 mobile:px-2 mobile:py-1.5 rounded mobile:text-xs"
+      class="fixed bottom-4 left-4 mobile:bottom-3 mobile:left-3 mobile:right-3 bg-destructive/10 border border-destructive text-destructive px-3 py-2 rounded text-sm"
     >
       {{ error }}
     </div>
@@ -313,21 +501,21 @@
       @dismiss="dismissToast(toast.id)"
     />
 
-    <!-- Alert Panel (E5-S3) -->
+    <!-- Alert Panel -->
     <div
       v-if="showAlertPanel"
       class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       @click.self="showAlertPanel = false"
     >
-      <div class="bg-[var(--theme-bg-primary)] rounded-lg shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden border border-[var(--theme-border-primary)]">
-        <div class="flex items-center justify-between p-4 border-b border-[var(--theme-border-primary)]">
-          <h2 class="text-xl font-bold text-[var(--theme-text-primary)]">Active Alerts</h2>
+      <div class="bg-card rounded-lg shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden border border-border">
+        <div class="flex items-center justify-between p-4 border-b border-border">
+          <h2 class="text-xl font-bold">Active Alerts</h2>
           <button
             @click="showAlertPanel = false"
-            class="p-2 rounded-lg hover:bg-[var(--theme-hover-bg)] transition-colors"
+            class="p-2 rounded-md hover:bg-accent transition-colors"
             title="Close"
           >
-            <span class="text-2xl">✕</span>
+            <X class="h-5 w-5" />
           </button>
         </div>
         <div class="overflow-y-auto max-h-[calc(80vh-5rem)]">
@@ -335,14 +523,14 @@
             :alerts="activeAlerts"
             :dismiss-alert="dismissAlert"
           />
-          <div v-if="activeAlerts.length === 0" class="p-8 text-center text-[var(--theme-text-tertiary)]">
+          <div v-if="activeAlerts.length === 0" class="p-8 text-center text-muted-foreground">
             No active alerts
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Conflict Panel (E4-S5) -->
+    <!-- Conflict Panel -->
     <ConflictPanel
       v-if="showConflictPanel"
       :conflicts="conflicts"
@@ -350,13 +538,13 @@
       @dismiss="handleConflictDismiss"
     />
 
-    <!-- Hook Wizard (E5-S5) -->
+    <!-- Hook Wizard -->
     <HookWizard
       :is-open="showHookWizard"
       @close="showHookWizard = false"
     />
 
-    <!-- Retention Settings (E6-S4) -->
+    <!-- Retention Settings -->
     <RetentionSettings
       v-if="showRetentionSettings"
       @close="showRetentionSettings = false"
@@ -365,7 +553,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, onMounted } from 'vue';
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
 import type { TimeRange } from './types';
 import { useWebSocket } from './composables/useWebSocket';
 import { useProjects } from './composables/useProjects';
@@ -374,6 +562,28 @@ import { useEventColors } from './composables/useEventColors';
 import { useNotifications } from './composables/useNotifications';
 import { useCommandPalette } from './composables/useCommandPalette';
 import { useAlerts } from './composables/useAlerts';
+import { useSoundAlerts } from './composables/useSoundAlerts';
+
+// Icons
+import {
+  Settings, ChevronDown, Moon, Sun, Palette, Bell, AlertTriangle,
+  GitMerge, Archive, Plus, Search, Filter, Trash2, Volume2, VolumeX, X, WifiOff
+} from 'lucide-vue-next';
+
+// shadcn UI
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuSeparator
+} from './components/ui/dropdown-menu';
+import { Switch } from './components/ui/switch';
+import { Slider } from './components/ui/slider';
+
+// New simplified views
+import SimpleDashboard from './components/SimpleDashboard.vue';
+import SimpleActivityFeed from './components/SimpleActivityFeed.vue';
+import SimpleDevNotes from './components/SimpleDevNotes.vue';
+
+// Existing components (advanced tabs + overlays)
 import EventTimeline from './components/EventTimeline.vue';
 import FilterPanel from './components/FilterPanel.vue';
 import SearchPanel from './components/SearchPanel.vue';
@@ -400,50 +610,134 @@ import WebhookManager from './components/WebhookManager.vue';
 import ApiDocs from './components/ApiDocs.vue';
 import { WS_URL } from './config';
 
-// Tab navigation
-const tabs = [
-  { id: 'projects' as const, label: 'Projects' },
-  { id: 'events' as const, label: 'Events' },
-  { id: 'topology' as const, label: 'Topology' },
-  { id: 'devlog' as const, label: 'Dev Log' },
-  { id: 'summaries' as const, label: 'Summaries' },
-  { id: 'costs' as const, label: 'Costs' },
-  { id: 'metrics' as const, label: 'Metrics' },
-  { id: 'analytics' as const, label: 'Analytics' },
-  { id: 'webhooks' as const, label: 'Webhooks' },
-  { id: 'api-docs' as const, label: 'API Docs' },
+// === Tab navigation ===
+type TabId = 'dashboard' | 'activity' | 'devnotes' | 'projects' | 'events' | 'topology' | 'devlog' | 'summaries' | 'costs' | 'metrics' | 'analytics' | 'webhooks' | 'api-docs';
+
+const primaryTabs: { id: TabId; label: string }[] = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'activity', label: 'Activity' },
+  { id: 'devnotes', label: 'Dev Notes' },
 ];
-const activeTab = ref<'projects' | 'events' | 'topology' | 'devlog' | 'summaries' | 'costs' | 'metrics' | 'analytics' | 'webhooks' | 'api-docs'>('projects');
 
-// WebSocket connection
-const { events, isConnected, error, clearEvents, projects, sessions, topology, conflicts, alerts } = useWebSocket(WS_URL);
+const advancedTabs: { id: TabId; label: string }[] = [
+  { id: 'projects', label: 'Projects (Advanced)' },
+  { id: 'events', label: 'Events' },
+  { id: 'topology', label: 'Topology' },
+  { id: 'devlog', label: 'Dev Log' },
+  { id: 'summaries', label: 'Summaries' },
+  { id: 'costs', label: 'Costs' },
+  { id: 'metrics', label: 'Metrics' },
+  { id: 'analytics', label: 'Analytics' },
+  { id: 'webhooks', label: 'Webhooks' },
+  { id: 'api-docs', label: 'API Docs' },
+];
 
-// Projects and dev logs
-const { devLogs } = useProjects(projects, sessions);
+// Categorized groups for the More dropdown
+const monitoringTabs = advancedTabs.filter(t => ['events', 'topology', 'metrics'].includes(t.id));
+const analysisTabs = advancedTabs.filter(t => ['summaries', 'costs', 'analytics'].includes(t.id));
+const advancedGroupTabs = advancedTabs.filter(t => ['projects', 'devlog'].includes(t.id));
+const configTabs = advancedTabs.filter(t => ['webhooks', 'api-docs'].includes(t.id));
 
-// Alerts management
+const advancedTabIds = new Set(advancedTabs.map(t => t.id));
+
+const activeTab = ref<TabId>('dashboard');
+
+const isAdvancedTabActive = computed(() => advancedTabIds.has(activeTab.value));
+
+const activeAdvancedTabLabel = computed(() => {
+  if (!isAdvancedTabActive.value) return '';
+  return advancedTabs.find(t => t.id === activeTab.value)?.label || '';
+});
+
+// === WebSocket connection ===
+const { events, isConnected, error, clearEvents, projects, sessions, devLogs: wsDevLogs, topology, conflicts, alerts } = useWebSocket(WS_URL);
+
+// === Connection status banner ===
+const showReconnected = ref(false);
+let wasDisconnected = false;
+let reconnectedTimer: ReturnType<typeof setTimeout> | null = null;
+
+watch(isConnected, (connected) => {
+  if (!connected) {
+    wasDisconnected = true;
+    showReconnected.value = false;
+    if (reconnectedTimer) {
+      clearTimeout(reconnectedTimer);
+      reconnectedTimer = null;
+    }
+  } else if (wasDisconnected) {
+    showReconnected.value = true;
+    reconnectedTimer = setTimeout(() => {
+      showReconnected.value = false;
+      reconnectedTimer = null;
+    }, 2000);
+  }
+});
+
+onUnmounted(() => {
+  if (reconnectedTimer) clearTimeout(reconnectedTimer);
+});
+
+// === Projects and dev logs ===
+const { devLogs } = useProjects(projects, sessions, wsDevLogs);
+
+// === Alerts management ===
 const { dismissAlert, activeAlerts, activeAlertCount } = useAlerts(alerts);
 
-// Theme management (sets up theme system)
+// === Theme management ===
 useThemes();
 
-// Event colors
+// === Dark mode toggle ===
+const isDark = ref(document.documentElement.classList.contains('dark'));
+function toggleDarkMode() {
+  isDark.value = !isDark.value;
+  document.documentElement.classList.toggle('dark', isDark.value);
+  localStorage.setItem('devpulse-dark-mode', isDark.value ? 'dark' : 'light');
+}
+
+// === Event colors ===
 const { getHexColorForApp } = useEventColors();
 
-// Notifications
+// === Notifications ===
 const { settings: notificationSettings, requestPermission: requestNotificationPermission } = useNotifications(events);
 
-// Command Palette
+// === Sound Alerts ===
+const { settings: soundSettings } = useSoundAlerts(events);
+
+// Warm up AudioContext on first user interaction (browser autoplay policy)
+let audioWarmedUp = false;
+function warmUpAudio() {
+  if (audioWarmedUp) return;
+  audioWarmedUp = true;
+  try {
+    const ctx = new AudioContext();
+    ctx.resume();
+    // Play a silent tone to fully unlock audio
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.01);
+  } catch { /* ignore */ }
+  document.removeEventListener('click', warmUpAudio);
+  document.removeEventListener('keydown', warmUpAudio);
+}
+document.addEventListener('click', warmUpAudio, { once: true });
+document.addEventListener('keydown', warmUpAudio, { once: true });
+
+// === Command Palette ===
 const { registerAction, setFilterCallbacks } = useCommandPalette();
 
-// Filters
+// === Filters (events tab) ===
 const filters = ref({
   sourceApp: '',
   sessionId: '',
   eventType: ''
 });
 
-// UI state
+// === UI state ===
 const stickToBottom = ref(true);
 const showThemeManager = ref(false);
 const showFilters = ref(false);
@@ -453,18 +747,18 @@ const showConflictPanel = ref(false);
 const showAlertPanel = ref(false);
 const showHookWizard = ref(false);
 const showRetentionSettings = ref(false);
-const uniqueAppNames = ref<string[]>([]); // Apps active in current time window
-const allAppNames = ref<string[]>([]); // All apps ever seen in session
+const uniqueAppNames = ref<string[]>([]);
+const allAppNames = ref<string[]>([]);
 const selectedAgentLanes = ref<string[]>([]);
-const currentTimeRange = ref<TimeRange>('1m'); // Current time range from LivePulseChart
+const currentTimeRange = ref<TimeRange>('1m');
 const replaySession = ref<{ sessionId: string; sourceApp: string } | null>(null);
 
-// Compute high severity conflict count
+// === Computed ===
 const highSeverityConflictCount = computed(() => {
   return conflicts.value.filter(c => c.severity === 'high').length;
 });
 
-// Toast notifications
+// === Toast notifications ===
 interface Toast {
   id: number;
   agentName: string;
@@ -474,13 +768,10 @@ const toasts = ref<Toast[]>([]);
 let toastIdCounter = 0;
 const seenAgents = new Set<string>();
 
-// Watch for new agents and show toast
 watch(uniqueAppNames, (newAppNames) => {
-  // Find agents that are new (not in seenAgents set)
   newAppNames.forEach(appName => {
     if (!seenAgents.has(appName)) {
       seenAgents.add(appName);
-      // Show toast for new agent
       const toast: Toast = {
         id: toastIdCounter++,
         agentName: appName,
@@ -498,44 +789,31 @@ const dismissToast = (id: number) => {
   }
 };
 
-// Handle agent tag clicks for swim lanes
+// === Event handlers ===
 const toggleAgentLane = (agentName: string) => {
   const index = selectedAgentLanes.value.indexOf(agentName);
   if (index >= 0) {
-    // Remove from comparison
     selectedAgentLanes.value.splice(index, 1);
   } else {
-    // Add to comparison
     selectedAgentLanes.value.push(agentName);
   }
 };
 
-// Handle clear button click
 const handleClearClick = () => {
   clearEvents();
   selectedAgentLanes.value = [];
 };
 
-// Debug handler for theme manager
-const handleThemeManagerClick = () => {
-  console.log('Theme manager button clicked!');
-  showThemeManager.value = true;
-};
-
-// Handle conflict dismiss
 const handleConflictDismiss = (id: string) => {
-  // The dismiss is handled by ConflictPanel, WebSocket will update our conflicts ref
   console.log('Conflict dismissed:', id);
 };
 
-// Handle session replay
 const handleReplay = (payload: { sessionId: string; sourceApp: string }) => {
   replaySession.value = payload;
 };
 
-// Register command palette actions
+// === Command palette actions ===
 onMounted(() => {
-  // Set up filter callbacks
   setFilterCallbacks({
     updateSessionFilter: (sessionId: string) => {
       filters.value.sessionId = sessionId;
@@ -553,12 +831,10 @@ onMounted(() => {
       showFilters.value = true;
     },
     navigateToProject: (_projectName: string) => {
-      // Navigate to projects tab - in the future, could scroll to specific project card
-      activeTab.value = 'projects';
+      activeTab.value = 'dashboard';
     }
   });
 
-  // Action: Clear events
   registerAction({
     id: 'clear-events',
     label: 'Clear Events',
@@ -568,7 +844,6 @@ onMounted(() => {
     execute: handleClearClick
   });
 
-  // Action: Toggle theme manager
   registerAction({
     id: 'toggle-theme',
     label: 'Open Theme Manager',
@@ -578,7 +853,15 @@ onMounted(() => {
     execute: () => { showThemeManager.value = true; }
   });
 
-  // Action: Toggle search panel
+  registerAction({
+    id: 'toggle-dark-mode',
+    label: 'Toggle Dark Mode',
+    category: 'settings',
+    keywords: ['dark', 'light', 'mode', 'theme'],
+    icon: '🌙',
+    execute: toggleDarkMode
+  });
+
   registerAction({
     id: 'toggle-search',
     label: 'Toggle Search Panel',
@@ -588,7 +871,6 @@ onMounted(() => {
     execute: () => { showSearchPanel.value = !showSearchPanel.value; }
   });
 
-  // Action: Toggle filters panel
   registerAction({
     id: 'toggle-filters',
     label: 'Toggle Filters Panel',
@@ -598,7 +880,6 @@ onMounted(() => {
     execute: () => { showFilters.value = !showFilters.value; }
   });
 
-  // Action: Toggle notification settings
   registerAction({
     id: 'toggle-notifications',
     label: 'Notification Settings',
@@ -608,7 +889,15 @@ onMounted(() => {
     execute: () => { showNotificationSettings.value = true; }
   });
 
-  // Action: Toggle alert panel
+  registerAction({
+    id: 'toggle-sound-alerts',
+    label: 'Toggle Sound Alerts',
+    category: 'settings',
+    keywords: ['sound', 'audio', 'alerts', 'mute'],
+    icon: '🔊',
+    execute: () => { soundSettings.value.enabled = !soundSettings.value.enabled; }
+  });
+
   registerAction({
     id: 'toggle-alerts',
     label: 'View Alerts',
@@ -618,7 +907,6 @@ onMounted(() => {
     execute: () => { showAlertPanel.value = true; }
   });
 
-  // Action: Toggle conflict panel
   registerAction({
     id: 'toggle-conflicts',
     label: 'View File Conflicts',
@@ -628,17 +916,43 @@ onMounted(() => {
     execute: () => { showConflictPanel.value = true; }
   });
 
-  // Action: Navigate to Projects tab
+  // Navigation actions
+  registerAction({
+    id: 'nav-dashboard',
+    label: 'Go to Dashboard',
+    category: 'navigate',
+    keywords: ['dashboard', 'home', 'overview'],
+    icon: '📁',
+    execute: () => { activeTab.value = 'dashboard'; }
+  });
+
+  registerAction({
+    id: 'nav-activity',
+    label: 'Go to Activity Feed',
+    category: 'navigate',
+    keywords: ['activity', 'feed', 'stream'],
+    icon: '📋',
+    execute: () => { activeTab.value = 'activity'; }
+  });
+
+  registerAction({
+    id: 'nav-devnotes',
+    label: 'Go to Dev Notes',
+    category: 'navigate',
+    keywords: ['devnotes', 'notes', 'log'],
+    icon: '📝',
+    execute: () => { activeTab.value = 'devnotes'; }
+  });
+
   registerAction({
     id: 'nav-projects',
-    label: 'Go to Projects Tab',
+    label: 'Go to Projects (Advanced)',
     category: 'navigate',
-    keywords: ['projects', 'overview', 'dashboard'],
+    keywords: ['projects', 'overview'],
     icon: '📁',
     execute: () => { activeTab.value = 'projects'; }
   });
 
-  // Action: Navigate to Events tab
   registerAction({
     id: 'nav-events',
     label: 'Go to Events Tab',
@@ -648,7 +962,6 @@ onMounted(() => {
     execute: () => { activeTab.value = 'events'; }
   });
 
-  // Action: Navigate to Topology tab
   registerAction({
     id: 'nav-topology',
     label: 'Go to Topology Tab',
@@ -658,7 +971,6 @@ onMounted(() => {
     execute: () => { activeTab.value = 'topology'; }
   });
 
-  // Action: Navigate to Dev Log tab
   registerAction({
     id: 'nav-devlog',
     label: 'Go to Dev Log Tab',
@@ -668,7 +980,6 @@ onMounted(() => {
     execute: () => { activeTab.value = 'devlog'; }
   });
 
-  // Action: Navigate to Summaries tab
   registerAction({
     id: 'nav-summaries',
     label: 'Go to Summaries Tab',
@@ -678,7 +989,6 @@ onMounted(() => {
     execute: () => { activeTab.value = 'summaries'; }
   });
 
-  // Action: Navigate to Costs tab
   registerAction({
     id: 'nav-costs',
     label: 'Go to Costs Tab',
@@ -688,7 +998,6 @@ onMounted(() => {
     execute: () => { activeTab.value = 'costs'; }
   });
 
-  // Action: Navigate to Metrics tab
   registerAction({
     id: 'nav-metrics',
     label: 'Go to Metrics Tab',
@@ -698,7 +1007,6 @@ onMounted(() => {
     execute: () => { activeTab.value = 'metrics'; }
   });
 
-  // Action: Navigate to Analytics tab
   registerAction({
     id: 'nav-analytics',
     label: 'Go to Analytics Tab',
@@ -708,7 +1016,6 @@ onMounted(() => {
     execute: () => { activeTab.value = 'analytics'; }
   });
 
-  // Action: Navigate to Webhooks tab
   registerAction({
     id: 'nav-webhooks',
     label: 'Go to Webhooks Tab',
@@ -718,7 +1025,6 @@ onMounted(() => {
     execute: () => { activeTab.value = 'webhooks'; }
   });
 
-  // Action: Navigate to API Docs tab
   registerAction({
     id: 'nav-api-docs',
     label: 'Go to API Docs Tab',
@@ -728,7 +1034,6 @@ onMounted(() => {
     execute: () => { activeTab.value = 'api-docs'; }
   });
 
-  // Action: Open retention settings
   registerAction({
     id: 'open-retention',
     label: 'Data Retention Settings',

@@ -2,10 +2,10 @@ import { initDatabase, getDb, insertEvent, getFilterOptions, getRecentEvents, up
 import {
   initEnricher, enrichEvent, getAllProjects, getActiveSessions,
   getProjectStatus, getRecentDevLogs, getDevLogsForProject,
-  markIdleSessions, cleanupOldSessions, cleanupOldFileAccessLogs, scanPorts, getAgentTopology
+  markIdleSessions, cleanupOldSessions, cleanupOldFileAccessLogs, scanPorts, getAgentTopology, refreshProjectBranches
 } from './enricher';
 import type { HookEvent, HumanInTheLoopResponse, Webhook } from './types';
-import { triggerWebhooks, testWebhook } from './webhooks';
+import { triggerWebhooks, testWebhook, validateWebhookUrl } from './webhooks';
 import {
   createTheme, updateThemeById, getThemeById, searchThemes,
   deleteThemeById, exportThemeById, importTheme, getThemeStats
@@ -28,7 +28,8 @@ initMetrics(getDb());
 // Mark idle sessions and check alerts every 30 seconds
 setInterval(() => {
   markIdleSessions();
-  broadcastProjects(); // Broadcast session updates to clients when idle status changes
+  refreshProjectBranches();
+  broadcastProjects(); // Broadcast session updates to clients when idle/branch status changes
   broadcastAlerts(); // Check and broadcast alerts
 }, 30000);
 
@@ -138,8 +139,9 @@ async function sendResponseToAgent(
 }
 
 // CORS headers
+const CLIENT_ORIGIN = `http://localhost:${process.env.CLIENT_PORT || '5173'}`;
 const headers = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': CLIENT_ORIGIN,
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
@@ -148,6 +150,15 @@ const jsonHeaders = { ...headers, 'Content-Type': 'application/json' };
 
 // Server port constant
 const SERVER_PORT = parseInt(process.env.SERVER_PORT || '4000');
+
+// Valid hook event types
+const VALID_HOOK_EVENT_TYPES = new Set([
+  'SessionStart', 'SessionEnd', 'Stop',
+  'PreToolUse', 'PostToolUse', 'PostToolUseFailure',
+  'Notification', 'UserPromptSubmit',
+  'SubagentStart', 'SubagentStop',
+  'PreCompact', 'TestHook',
+]);
 
 // Generate HTML report for export (E6-S2)
 function generateHTMLReport(
@@ -488,9 +499,7 @@ function generateHTMLReport(
 
 // Helper to escape HTML entities
 function escapeHTML(str: string): string {
-  const div = { textContent: str } as any;
-  const text = div.textContent || '';
-  return text
+  return str
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -516,6 +525,14 @@ const server = Bun.serve({
 
     // POST /events - Receive new events
     if (url.pathname === '/events' && req.method === 'POST') {
+      // Reject oversized payloads (5MB limit)
+      const contentLength = parseInt(req.headers.get('content-length') || '0');
+      if (contentLength > 5 * 1024 * 1024) {
+        return new Response(JSON.stringify({ error: 'Payload too large (max 5MB)' }), {
+          status: 413, headers: jsonHeaders
+        });
+      }
+
       try {
         const event: HookEvent = await req.json();
         
@@ -524,7 +541,14 @@ const server = Bun.serve({
             status: 400, headers: jsonHeaders
           });
         }
-        
+
+        // Validate hook_event_type against allowlist
+        if (!VALID_HOOK_EVENT_TYPES.has(event.hook_event_type)) {
+          return new Response(JSON.stringify({ error: `Invalid hook_event_type: ${event.hook_event_type}` }), {
+            status: 400, headers: jsonHeaders
+          });
+        }
+
         // Insert event into database
         const savedEvent = insertEvent(event);
         
@@ -562,7 +586,12 @@ const server = Bun.serve({
             broadcastConflicts();
           }
         }
-        
+
+        // Broadcast dev logs when session ends (new dev note generated)
+        if (event.hook_event_type === 'Stop' || event.hook_event_type === 'SessionEnd') {
+          broadcastDevLogs();
+        }
+
         return new Response(JSON.stringify(savedEvent), { headers: jsonHeaders });
       } catch (error) {
         console.error('Error processing event:', error);
@@ -579,7 +608,7 @@ const server = Bun.serve({
     
     // GET /events/recent
     if (url.pathname === '/events/recent' && req.method === 'GET') {
-      const limit = parseInt(url.searchParams.get('limit') || '300');
+      const limit = Math.min(parseInt(url.searchParams.get('limit') || '300') || 300, 1000);
       return new Response(JSON.stringify(getRecentEvents(limit)), { headers: jsonHeaders });
     }
 
@@ -648,7 +677,7 @@ const server = Bun.serve({
 
     // GET /api/devlogs - Get recent dev logs
     if (url.pathname === '/api/devlogs' && req.method === 'GET') {
-      const limit = parseInt(url.searchParams.get('limit') || '50');
+      const limit = Math.min(parseInt(url.searchParams.get('limit') || '50') || 50, 1000);
       const project = url.searchParams.get('project');
 
       const logs = project
@@ -656,6 +685,45 @@ const server = Bun.serve({
         : getRecentDevLogs(limit);
 
       return new Response(JSON.stringify(logs), { headers: jsonHeaders });
+    }
+
+    // GET /api/devnotes - List markdown dev notes from all project docs/dev-notes/ folders
+    if (url.pathname === '/api/devnotes' && req.method === 'GET') {
+      const { readdirSync, readFileSync, existsSync } = require('node:fs');
+      const { join } = require('node:path');
+
+      const projects = getAllProjects() as any[];
+      const notes: { filename: string; project: string; content: string; path: string }[] = [];
+
+      for (const project of projects) {
+        if (!project.path) continue;
+        const notesDir = join(project.path, 'docs', 'dev-notes');
+        if (!existsSync(notesDir)) continue;
+
+        try {
+          const files = readdirSync(notesDir)
+            .filter((f: string) => f.endsWith('.md'))
+            .sort()
+            .reverse(); // newest first
+
+          for (const file of files.slice(0, 50)) {
+            try {
+              const content = readFileSync(join(notesDir, file), 'utf-8');
+              notes.push({
+                filename: file,
+                project: project.name,
+                content,
+                path: join(notesDir, file),
+              });
+            } catch { /* skip unreadable files */ }
+          }
+        } catch { /* skip inaccessible directories */ }
+      }
+
+      // Sort all notes by filename (date-prefixed) descending
+      notes.sort((a, b) => b.filename.localeCompare(a.filename));
+
+      return new Response(JSON.stringify(notes.slice(0, 100)), { headers: jsonHeaders });
     }
 
     // GET /api/sessions/:sessionId/events - Get all events for a session
@@ -1204,6 +1272,20 @@ const server = Bun.serve({
           });
         }
 
+        // Validate projectName: alphanumeric, dashes, underscores, dots, spaces only
+        if (!/^[a-zA-Z0-9_\-. ]+$/.test(projectName)) {
+          return new Response(JSON.stringify({ error: 'Invalid projectName: only alphanumeric, dashes, underscores, dots, and spaces allowed' }), {
+            status: 400, headers: jsonHeaders
+          });
+        }
+
+        // Validate projectPath: must be absolute and no shell metacharacters
+        if (!projectPath.startsWith('/') || /[;&|`$(){}!#]/.test(projectPath)) {
+          return new Response(JSON.stringify({ error: 'Invalid projectPath: must be an absolute path without shell metacharacters' }), {
+            status: 400, headers: jsonHeaders
+          });
+        }
+
         // Verify directory exists
         const dirExists = await Bun.file(projectPath).exists();
         if (!dirExists) {
@@ -1410,6 +1492,14 @@ const server = Bun.serve({
           });
         }
 
+        // Validate webhook URL
+        const urlValidation = validateWebhookUrl(webhookUrl);
+        if (!urlValidation.valid) {
+          return new Response(JSON.stringify({ error: urlValidation.error }), {
+            status: 400, headers: jsonHeaders
+          });
+        }
+
         const now = Date.now();
         const id = `webhook-${now}-${Math.random().toString(36).slice(2, 11)}`;
 
@@ -1456,6 +1546,16 @@ const server = Bun.serve({
           projectFilter?: string;
           active?: boolean;
         };
+
+        // Validate webhook URL if being updated
+        if (body.url !== undefined) {
+          const urlValidation = validateWebhookUrl(body.url);
+          if (!urlValidation.valid) {
+            return new Response(JSON.stringify({ error: urlValidation.error }), {
+              status: 400, headers: jsonHeaders
+            });
+          }
+        }
 
         const updates: string[] = [];
         const values: any[] = [];
@@ -1681,6 +1781,13 @@ const server = Bun.serve({
   
   websocket: {
     open(ws) {
+      // Limit concurrent WebSocket connections
+      if (wsClients.size >= 20) {
+        console.warn('[WebSocket] Connection limit reached (20), rejecting client');
+        ws.close(1013, 'Too many connections');
+        return;
+      }
+
       console.log('WebSocket client connected');
       wsClients.add(ws);
       
@@ -1768,6 +1875,19 @@ function broadcastConflicts() {
 function broadcastAlerts() {
   const alerts = checkAlerts(getDb());
   const message = JSON.stringify({ type: 'alerts', data: alerts });
+
+  wsClients.forEach(client => {
+    try {
+      client.send(message);
+    } catch {
+      wsClients.delete(client);
+    }
+  });
+}
+
+function broadcastDevLogs() {
+  const logs = getRecentDevLogs(50);
+  const message = JSON.stringify({ type: 'devlogs', data: logs });
 
   wsClients.forEach(client => {
     try {

@@ -2,6 +2,54 @@ import type { Database } from 'bun:sqlite';
 import type { HookEvent, Webhook } from './types';
 
 /**
+ * Validate a webhook URL for safety.
+ * Blocks private/internal IPs (SSRF prevention) and requires https:// or http://localhost.
+ */
+export function validateWebhookUrl(urlStr: string): { valid: boolean; error?: string } {
+  let parsed: URL;
+  try {
+    parsed = new URL(urlStr);
+  } catch {
+    return { valid: false, error: 'Invalid URL format' };
+  }
+
+  // Must be http or https
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { valid: false, error: 'URL must use http or https protocol' };
+  }
+
+  const hostname = parsed.hostname;
+
+  // Allow http only for localhost
+  if (parsed.protocol === 'http:') {
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1' && hostname !== '::1') {
+      return { valid: false, error: 'Non-localhost URLs must use https' };
+    }
+  }
+
+  // Block private/internal IP ranges (SSRF prevention)
+  const privatePatterns = [
+    /^127\./,                                    // 127.0.0.0/8
+    /^10\./,                                     // 10.0.0.0/8
+    /^192\.168\./,                               // 192.168.0.0/16
+    /^172\.(1[6-9]|2\d|3[0-1])\./,             // 172.16.0.0/12
+    /^169\.254\./,                               // 169.254.0.0/16 (link-local)
+    /^0\./,                                      // 0.0.0.0/8
+  ];
+
+  // Only block private IPs for non-localhost URLs
+  if (hostname !== 'localhost' && hostname !== '::1') {
+    for (const pattern of privatePatterns) {
+      if (pattern.test(hostname)) {
+        return { valid: false, error: 'Webhook URLs must not point to private/internal IP addresses' };
+      }
+    }
+  }
+
+  return { valid: true };
+}
+
+/**
  * Create HMAC-SHA256 signature for webhook payload
  */
 function createHmacSignature(payload: string, secret: string): string {

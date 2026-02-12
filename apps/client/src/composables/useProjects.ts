@@ -1,8 +1,8 @@
-import { ref, onMounted, onUnmounted, type Ref } from 'vue';
+import { ref, watch, onMounted, onUnmounted, type Ref } from 'vue';
 import type { Project, Session, DevLog } from '../types';
 import { API_BASE_URL } from '../config';
 
-export function useProjects(projects: Ref<Project[]>, sessions: Ref<Session[]>) {
+export function useProjects(projects: Ref<Project[]>, sessions: Ref<Session[]>, wsDevLogs?: Ref<DevLog[]>) {
   const devLogs = ref<DevLog[]>([]);
   let pollInterval: number | null = null;
 
@@ -17,9 +17,20 @@ export function useProjects(projects: Ref<Project[]>, sessions: Ref<Session[]>) 
     }
   }
 
+  // If WebSocket dev logs are provided, use them when they update
+  if (wsDevLogs) {
+    watch(wsDevLogs, (newLogs) => {
+      if (newLogs.length > 0) {
+        devLogs.value = newLogs;
+      }
+    });
+  }
+
   onMounted(() => {
+    // Initial fetch (WebSocket won't have data until a session ends)
     fetchDevLogs();
-    pollInterval = window.setInterval(fetchDevLogs, 30000);
+    // Poll less frequently since WebSocket handles real-time updates
+    pollInterval = window.setInterval(fetchDevLogs, 60000);
   });
 
   onUnmounted(() => {

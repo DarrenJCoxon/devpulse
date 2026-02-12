@@ -112,7 +112,7 @@ export interface DevLog {
 }
 
 export interface WebSocketMessage {
-  type: 'initial' | 'event' | 'hitl_response' | 'projects' | 'sessions' | 'topology' | 'conflicts' | 'alerts';
+  type: 'initial' | 'event' | 'hitl_response' | 'projects' | 'sessions' | 'topology' | 'conflicts' | 'alerts' | 'devlogs';
   data: HookEvent | HookEvent[] | HumanInTheLoopResponse | Project[] | Session[] | AgentNode[] | FileConflict[] | any[];
 }
 

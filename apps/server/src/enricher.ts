@@ -1357,13 +1357,16 @@ export function markIdleSessions(): void {
   const twoMinutesAgo = now - 120000;
   const tenMinutesAgo = now - 600000;
 
-  // Step 1: Mark active sessions as idle after 2 minutes of inactivity
+  // Step 1: Find sessions going active → idle (so we can update their project counts)
+  const newlyIdle = db.prepare(
+    "SELECT DISTINCT project_name FROM sessions WHERE status = 'active' AND last_event_at < ?"
+  ).all(twoMinutesAgo) as any[];
+
   db.prepare(
     "UPDATE sessions SET status = 'idle' WHERE status = 'active' AND last_event_at < ?"
   ).run(twoMinutesAgo);
 
-  // Step 2: Mark idle/waiting sessions as stopped after 10 minutes of inactivity
-  // This catches sessions where the terminal was killed without a Stop event
+  // Step 2: Find sessions going idle/waiting → stopped (10min inactivity)
   const staleSessionsBefore = db.prepare(
     "SELECT session_id, source_app, project_name FROM sessions WHERE status IN ('idle', 'waiting') AND last_event_at < ?"
   ).all(tenMinutesAgo) as any[];
@@ -1384,21 +1387,32 @@ export function markIdleSessions(): void {
     }
   }
 
-  // Update project session counts for all affected projects
-  const affected = db.prepare(
-    "SELECT DISTINCT project_name FROM sessions WHERE (status = 'idle' AND last_event_at < ?) OR (status = 'stopped' AND last_event_at >= ? AND last_event_at < ?)"
-  ).all(twoMinutesAgo, tenMinutesAgo, now) as any[];
+  // Update project session counts for ALL projects affected by status transitions.
+  // We track affected projects from the actual transitions above, rather than re-querying,
+  // because stopped sessions have last_event_at < tenMinutesAgo by definition.
+  const affectedProjects = new Set<string>();
+  for (const row of newlyIdle) affectedProjects.add(row.project_name);
+  for (const row of staleSessionsBefore) affectedProjects.add(row.project_name);
 
-  for (const row of affected) {
-    updateProjectSessionCount(row.project_name);
+  for (const projectName of affectedProjects) {
+    updateProjectSessionCount(projectName);
     // Recalculate health for affected projects (E5-S4)
     try {
-      const health = calculateProjectHealth(row.project_name);
+      const health = calculateProjectHealth(projectName);
       db.prepare('UPDATE projects SET health = ?, updated_at = ? WHERE name = ?')
-        .run(JSON.stringify(health), now, row.project_name);
+        .run(JSON.stringify(health), now, projectName);
     } catch (error) {
       console.error('[Health] Error recalculating project health:', error);
     }
+  }
+
+  // Reconcile: fix any projects where active_sessions > 0 but no active/idle/waiting sessions exist.
+  // This catches stale counts from missed transitions (e.g. server restart, previous bugs).
+  const staleProjects = db.prepare(
+    "SELECT p.name FROM projects p WHERE p.active_sessions > 0 AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.project_name = p.name AND s.status IN ('active', 'idle', 'waiting'))"
+  ).all() as any[];
+  for (const row of staleProjects) {
+    updateProjectSessionCount(row.name);
   }
 }
 

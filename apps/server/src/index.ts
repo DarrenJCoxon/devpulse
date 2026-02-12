@@ -836,6 +836,119 @@ const server = Bun.serve({
       }
     }
 
+    // GET /api/search - Full-text search across events, sessions, dev_logs (E6-S3)
+    if (url.pathname === '/api/search' && req.method === 'GET') {
+      try {
+        const query = url.searchParams.get('q');
+        const type = url.searchParams.get('type') || 'all';
+        const limitParam = url.searchParams.get('limit');
+        const limit = limitParam ? parseInt(limitParam) : 20;
+
+        if (!query || query.trim() === '') {
+          return new Response(JSON.stringify({ error: 'Missing query parameter (q)' }), {
+            status: 400, headers: jsonHeaders
+          });
+        }
+
+        // Validate type parameter
+        const validTypes = ['events', 'sessions', 'devlogs', 'all'];
+        if (!validTypes.includes(type)) {
+          return new Response(JSON.stringify({ error: 'Invalid type parameter. Must be one of: events, sessions, devlogs, all' }), {
+            status: 400, headers: jsonHeaders
+          });
+        }
+
+        // Validate limit parameter
+        if (isNaN(limit) || limit < 1 || limit > 100) {
+          return new Response(JSON.stringify({ error: 'Invalid limit parameter. Must be between 1 and 100' }), {
+            status: 400, headers: jsonHeaders
+          });
+        }
+
+        const searchTerm = `%${query}%`;
+        const results: {
+          events: { count: number; results: HookEvent[] };
+          sessions: { count: number; results: Session[] };
+          devlogs: { count: number; results: DevLog[] };
+        } = {
+          events: { count: 0, results: [] },
+          sessions: { count: 0, results: [] },
+          devlogs: { count: 0, results: [] }
+        };
+
+        // Search events
+        if (type === 'events' || type === 'all') {
+          const eventsCountStmt = getDb().prepare(`
+            SELECT COUNT(*) as count FROM events
+            WHERE payload LIKE ? OR summary LIKE ? OR source_app LIKE ?
+          `);
+          const eventsCount = eventsCountStmt.get(searchTerm, searchTerm, searchTerm) as { count: number };
+          results.events.count = eventsCount.count;
+
+          const eventsStmt = getDb().prepare(`
+            SELECT id, source_app, session_id, hook_event_type, payload, chat, summary, timestamp, model_name
+            FROM events
+            WHERE payload LIKE ? OR summary LIKE ? OR source_app LIKE ?
+            ORDER BY timestamp DESC LIMIT ?
+          `);
+          results.events.results = eventsStmt.all(searchTerm, searchTerm, searchTerm, limit) as HookEvent[];
+        }
+
+        // Search sessions
+        if (type === 'sessions' || type === 'all') {
+          const sessionsCountStmt = getDb().prepare(`
+            SELECT COUNT(*) as count FROM sessions
+            WHERE session_id LIKE ?
+               OR source_app LIKE ?
+               OR project_name LIKE ?
+               OR current_branch LIKE ?
+          `);
+          const sessionsCount = sessionsCountStmt.get(searchTerm, searchTerm, searchTerm, searchTerm) as { count: number };
+          results.sessions.count = sessionsCount.count;
+
+          const sessionsStmt = getDb().prepare(`
+            SELECT id, session_id, project_name, source_app, status, current_branch, started_at, last_event_at, event_count, model_name, cwd, task_context, compaction_count, last_compaction_at, compaction_history
+            FROM sessions
+            WHERE session_id LIKE ?
+               OR source_app LIKE ?
+               OR project_name LIKE ?
+               OR current_branch LIKE ?
+            ORDER BY last_event_at DESC LIMIT ?
+          `);
+          results.sessions.results = sessionsStmt.all(searchTerm, searchTerm, searchTerm, searchTerm, limit) as Session[];
+        }
+
+        // Search dev logs
+        if (type === 'devlogs' || type === 'all') {
+          const devlogsCountStmt = getDb().prepare(`
+            SELECT COUNT(*) as count FROM dev_logs
+            WHERE summary LIKE ?
+               OR files_changed LIKE ?
+               OR project_name LIKE ?
+          `);
+          const devlogsCount = devlogsCountStmt.get(searchTerm, searchTerm, searchTerm) as { count: number };
+          results.devlogs.count = devlogsCount.count;
+
+          const devlogsStmt = getDb().prepare(`
+            SELECT id, session_id, source_app, project_name, branch, summary, files_changed, commits, started_at, ended_at, duration_minutes, event_count, tool_breakdown
+            FROM dev_logs
+            WHERE summary LIKE ?
+               OR files_changed LIKE ?
+               OR project_name LIKE ?
+            ORDER BY ended_at DESC LIMIT ?
+          `);
+          results.devlogs.results = devlogsStmt.all(searchTerm, searchTerm, searchTerm, limit) as DevLog[];
+        }
+
+        return new Response(JSON.stringify(results), { headers: jsonHeaders });
+      } catch (error: any) {
+        console.error('[Search API] Error:', error);
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
+    }
+
     // GET /api/analytics/heatmap - Get activity heatmap data (E6-S1)
     if (url.pathname === '/api/analytics/heatmap' && req.method === 'GET') {
       try {

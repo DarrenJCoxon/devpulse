@@ -44,6 +44,16 @@
             <span class="text-2xl mobile:text-base">🗑️</span>
           </button>
 
+          <!-- Search Toggle Button (Events tab only) -->
+          <button
+            v-if="activeTab === 'events'"
+            @click="showSearchPanel = !showSearchPanel"
+            class="p-3 mobile:p-1 rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 border border-white/30 hover:border-white/50 backdrop-blur-sm shadow-lg hover:shadow-xl"
+            :title="showSearchPanel ? 'Hide search' : 'Show search'"
+          >
+            <span class="text-2xl mobile:text-base">🔍</span>
+          </button>
+
           <!-- Filters Toggle Button (Events tab only) -->
           <button
             v-if="activeTab === 'events'"
@@ -156,6 +166,12 @@
 
     <!-- Events Tab -->
     <template v-if="activeTab === 'events'">
+      <!-- Search Panel (conditionally shown when searching) -->
+      <SearchPanel
+        v-if="showSearchPanel"
+        @close="showSearchPanel = false"
+      />
+
       <!-- Filters -->
       <FilterPanel
         v-if="showFilters"
@@ -335,6 +351,7 @@ import { useCommandPalette } from './composables/useCommandPalette';
 import { useAlerts } from './composables/useAlerts';
 import EventTimeline from './components/EventTimeline.vue';
 import FilterPanel from './components/FilterPanel.vue';
+import SearchPanel from './components/SearchPanel.vue';
 import StickScrollButton from './components/StickScrollButton.vue';
 import LivePulseChart from './components/LivePulseChart.vue';
 import ThemeManager from './components/ThemeManager.vue';
@@ -400,6 +417,7 @@ const filters = ref({
 const stickToBottom = ref(true);
 const showThemeManager = ref(false);
 const showFilters = ref(false);
+const showSearchPanel = ref(false);
 const showNotificationSettings = ref(false);
 const showConflictPanel = ref(false);
 const showAlertPanel = ref(false);
@@ -527,6 +545,16 @@ onMounted(() => {
     keywords: ['theme', 'color', 'appearance', 'style'],
     icon: '🎨',
     execute: () => { showThemeManager.value = true; }
+  });
+
+  // Action: Toggle search panel
+  registerAction({
+    id: 'toggle-search',
+    label: 'Toggle Search Panel',
+    category: 'action',
+    keywords: ['search', 'find', 'query'],
+    icon: '🔍',
+    execute: () => { showSearchPanel.value = !showSearchPanel.value; }
   });
 
   // Action: Toggle filters panel

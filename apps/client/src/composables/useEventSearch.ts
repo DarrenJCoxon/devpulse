@@ -1,9 +1,97 @@
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import type { HookEvent } from '../types';
+
+// Saved Filter Interface
+export interface SavedFilter {
+  id: string;              // UUID
+  name: string;            // User-provided name
+  query: string;           // Search text
+  sourceApp: string;       // Filter value
+  sessionId: string;       // Filter value
+  eventType: string;       // Filter value
+  createdAt: number;
+}
+
+const STORAGE_KEY = 'devpulse-saved-filters';
+
+// Generate a simple UUID
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 
 export function useEventSearch() {
   const searchPattern = ref<string>('');
   const searchError = ref<string>('');
+  const savedFilters = ref<SavedFilter[]>([]);
+
+  // Load saved filters from localStorage on init
+  const loadSavedFilters = () => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        savedFilters.value = JSON.parse(stored);
+      }
+    } catch (error) {
+      console.error('Failed to load saved filters:', error);
+      savedFilters.value = [];
+    }
+  };
+
+  // Save filters to localStorage
+  const persistFilters = () => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(savedFilters.value));
+    } catch (error) {
+      console.error('Failed to persist filters:', error);
+    }
+  };
+
+  // Watch for changes and persist
+  watch(savedFilters, persistFilters, { deep: true });
+
+  // Initialize
+  loadSavedFilters();
+
+  // Save a new filter
+  const saveFilter = (name: string, filters: { query: string; sourceApp: string; sessionId: string; eventType: string }) => {
+    const newFilter: SavedFilter = {
+      id: generateUUID(),
+      name: name.trim(),
+      query: filters.query,
+      sourceApp: filters.sourceApp,
+      sessionId: filters.sessionId,
+      eventType: filters.eventType,
+      createdAt: Date.now()
+    };
+
+    savedFilters.value.push(newFilter);
+    return newFilter;
+  };
+
+  // Delete a filter
+  const deleteFilter = (id: string) => {
+    const index = savedFilters.value.findIndex(f => f.id === id);
+    if (index !== -1) {
+      savedFilters.value.splice(index, 1);
+    }
+  };
+
+  // Load a filter (returns the filter object)
+  const loadFilter = (id: string): SavedFilter | undefined => {
+    return savedFilters.value.find(f => f.id === id);
+  };
+
+  // Rename a filter
+  const renameFilter = (id: string, newName: string) => {
+    const filter = savedFilters.value.find(f => f.id === id);
+    if (filter) {
+      filter.name = newName.trim();
+    }
+  };
 
   // Validate regex pattern
   const validateRegex = (pattern: string): { valid: boolean; error?: string } => {
@@ -130,6 +218,12 @@ export function useEventSearch() {
     searchEvents,
     updateSearchPattern,
     clearSearch,
-    getSearchableText
+    getSearchableText,
+    // Saved filters
+    savedFilters,
+    saveFilter,
+    deleteFilter,
+    loadFilter,
+    renameFilter
   };
 }

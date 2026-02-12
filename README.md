@@ -230,6 +230,49 @@ Claude Code Sessions
 - **Hooks**: Python 3.8+, Astral uv (inline script dependencies)
 - **Communication**: HTTP REST + WebSocket
 
+## Troubleshooting
+
+### A project shows no activity even though Claude Code is running
+
+Claude Code loads hooks from `.claude/settings.json` **when the session starts**. If you installed hooks while a session was already running, that session won't pick them up.
+
+**Fix:** Restart the Claude session without losing context:
+
+```bash
+# In the terminal running Claude Code for that project:
+claude --continue
+```
+
+This restarts the CLI process (reloading hooks) while preserving your full conversation history. The session ID stays the same, so DevPulse tracks it as a continuous session.
+
+If the session was started with `--resume`, use that instead:
+
+```bash
+claude --resume
+```
+
+### A project shows "active" sessions but nothing is running
+
+DevPulse marks sessions as idle after 2 minutes and stopped after 10 minutes of inactivity. If the server was restarted while sessions were mid-transition, the active count can get stuck. This self-corrects within 30 seconds as the reconciliation timer runs.
+
+To force an immediate refresh, restart the server:
+
+```bash
+./scripts/start-system.sh
+```
+
+### Hooks are installed but events never arrive
+
+1. **Check the server is running**: `curl http://localhost:4000/api/projects` should return JSON
+2. **Test the hook manually** from your project directory:
+   ```bash
+   echo '{}' | uv run --script .claude/hooks/send_event.py --source-app YourProject --event-type PreToolUse
+   ```
+   If this errors, the hook scripts may be misconfigured or `uv` may not be installed.
+3. **Check the hook files exist**: `ls .claude/hooks/send_event.py` in your project
+
+---
+
 ## Credits
 
 Extended from [claude-code-hooks-multi-agent-observability](https://github.com/disler/claude-code-hooks-multi-agent-observability) by [IndyDevDan](https://www.youtube.com/@indydevdan). Watch the [deep dive on multi-agent orchestration](https://youtu.be/RpUTF_U4kiw) for background.

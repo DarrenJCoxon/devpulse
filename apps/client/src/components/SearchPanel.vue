@@ -335,7 +335,9 @@ const displayedDevLogs = computed(() => {
     : results.value.devlogs.results.slice(0, 5);
 });
 
-const formatTimestamp = (timestamp: number): string => {
+const formatTimestamp = (timestamp: number | undefined): string => {
+  if (!timestamp) return 'N/A';
+
   const date = new Date(timestamp);
   const now = new Date();
   const diff = now.getTime() - date.getTime();

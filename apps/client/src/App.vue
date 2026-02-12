@@ -126,6 +126,15 @@
             <span class="text-2xl mobile:text-base">🎨</span>
           </button>
 
+          <!-- Retention Settings Button -->
+          <button
+            @click="showRetentionSettings = true"
+            class="p-3 mobile:p-1 rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 border border-white/30 hover:border-white/50 backdrop-blur-sm shadow-lg hover:shadow-xl"
+            title="Data retention settings"
+          >
+            <span class="text-2xl mobile:text-base">⚙️</span>
+          </button>
+
           <!-- Command Palette Hint -->
           <div
             class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/20 border border-white/30 backdrop-blur-sm"
@@ -336,6 +345,12 @@
       :is-open="showHookWizard"
       @close="showHookWizard = false"
     />
+
+    <!-- Retention Settings (E6-S4) -->
+    <RetentionSettings
+      v-if="showRetentionSettings"
+      @close="showRetentionSettings = false"
+    />
   </div>
 </template>
 
@@ -370,6 +385,7 @@ import ConflictPanel from './components/ConflictPanel.vue';
 import AlertBanner from './components/AlertBanner.vue';
 import HookWizard from './components/HookWizard.vue';
 import ActivityHeatmap from './components/ActivityHeatmap.vue';
+import RetentionSettings from './components/RetentionSettings.vue';
 import { WS_URL } from './config';
 
 // Tab navigation
@@ -422,6 +438,7 @@ const showNotificationSettings = ref(false);
 const showConflictPanel = ref(false);
 const showAlertPanel = ref(false);
 const showHookWizard = ref(false);
+const showRetentionSettings = ref(false);
 const uniqueAppNames = ref<string[]>([]); // Apps active in current time window
 const allAppNames = ref<string[]>([]); // All apps ever seen in session
 const selectedAgentLanes = ref<string[]>([]);
@@ -675,6 +692,16 @@ onMounted(() => {
     keywords: ['analytics', 'heatmap', 'activity'],
     icon: '📅',
     execute: () => { activeTab.value = 'analytics'; }
+  });
+
+  // Action: Open retention settings
+  registerAction({
+    id: 'open-retention',
+    label: 'Data Retention Settings',
+    category: 'settings',
+    keywords: ['retention', 'archive', 'cleanup', 'data', 'settings'],
+    icon: '⚙️',
+    execute: () => { showRetentionSettings.value = true; }
   });
 });
 </script>

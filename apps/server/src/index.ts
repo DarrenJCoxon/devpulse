@@ -1,4 +1,4 @@
-import { initDatabase, getDb, insertEvent, getFilterOptions, getRecentEvents, updateEventHITLResponse, getEventsForSession } from './db';
+import { initDatabase, getDb, insertEvent, getFilterOptions, getRecentEvents, updateEventHITLResponse, getEventsForSession, getSetting, setSetting, getAllSettings } from './db';
 import {
   initEnricher, enrichEvent, getAllProjects, getActiveSessions,
   getProjectStatus, getRecentDevLogs, getDevLogsForProject,
@@ -15,6 +15,7 @@ import { getCostsByProject, getCostsBySession, getDailyCosts } from './costs';
 import { initMetrics, getSessionMetrics, getProjectMetrics } from './metrics';
 import { getActiveConflicts, dismissConflict, detectConflicts } from './conflicts';
 import { checkAlerts } from './alerts';
+import { runCleanup, getAdminStats } from './retention';
 
 // Initialize database and enricher
 initDatabase();
@@ -45,6 +46,36 @@ setInterval(() => {
 setTimeout(() => {
   scanPorts().catch(console.error);
 }, 5000);
+
+// Cleanup old data based on retention settings (run daily by default)
+function scheduleCleanup() {
+  const settings = getAllSettings();
+  const intervalHours = parseInt(settings['retention.cleanup.interval.hours'] || '24');
+  const intervalMs = intervalHours * 3600000;
+
+  setInterval(async () => {
+    try {
+      console.log('[Retention] Running scheduled cleanup...');
+      const result = await runCleanup(getDb(), settings);
+      console.log('[Retention] Cleanup complete:', result);
+    } catch (error) {
+      console.error('[Retention] Cleanup error:', error);
+    }
+  }, intervalMs);
+
+  // Run initial cleanup after 1 hour
+  setTimeout(async () => {
+    try {
+      console.log('[Retention] Running initial cleanup...');
+      const result = await runCleanup(getDb(), settings);
+      console.log('[Retention] Initial cleanup complete:', result);
+    } catch (error) {
+      console.error('[Retention] Initial cleanup error:', error);
+    }
+  }, 3600000);
+}
+
+scheduleCleanup();
 
 // Store WebSocket clients
 const wsClients = new Set<any>();
@@ -1257,6 +1288,82 @@ const server = Bun.serve({
           success: false,
           error: error.message || 'Internal server error'
         }), { status: 500, headers: jsonHeaders });
+      }
+    }
+
+    // =============================================
+    // ADMIN API (E6-S4: Data Retention & Archival)
+    // =============================================
+
+    // GET /api/admin/stats - Get database and archive statistics
+    if (url.pathname === '/api/admin/stats' && req.method === 'GET') {
+      try {
+        const settings = getAllSettings();
+        const stats = await getAdminStats(getDb(), settings);
+        return new Response(JSON.stringify(stats), { headers: jsonHeaders });
+      } catch (error: any) {
+        console.error('[Admin Stats API] Error:', error);
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
+    }
+
+    // POST /api/admin/cleanup - Trigger immediate cleanup
+    if (url.pathname === '/api/admin/cleanup' && req.method === 'POST') {
+      try {
+        const settings = getAllSettings();
+        const result = await runCleanup(getDb(), settings);
+        return new Response(JSON.stringify(result), { headers: jsonHeaders });
+      } catch (error: any) {
+        console.error('[Admin Cleanup API] Error:', error);
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
+    }
+
+    // GET /api/admin/settings - Get all retention settings
+    if (url.pathname === '/api/admin/settings' && req.method === 'GET') {
+      try {
+        const settings = getAllSettings();
+        return new Response(JSON.stringify(settings), { headers: jsonHeaders });
+      } catch (error: any) {
+        console.error('[Admin Settings API] Error:', error);
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
+    }
+
+    // PUT /api/admin/settings - Update retention settings
+    if (url.pathname === '/api/admin/settings' && req.method === 'PUT') {
+      try {
+        const updates = await req.json() as Array<{ key: string; value: string }>;
+
+        if (!Array.isArray(updates)) {
+          return new Response(JSON.stringify({ error: 'Body must be an array of {key, value} objects' }), {
+            status: 400, headers: jsonHeaders
+          });
+        }
+
+        // Update each setting
+        for (const { key, value } of updates) {
+          if (!key || value === undefined) {
+            return new Response(JSON.stringify({ error: 'Each update must have key and value' }), {
+              status: 400, headers: jsonHeaders
+            });
+          }
+          setSetting(key, value);
+        }
+
+        const updatedSettings = getAllSettings();
+        return new Response(JSON.stringify(updatedSettings), { headers: jsonHeaders });
+      } catch (error: any) {
+        console.error('[Admin Settings API] Error:', error);
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
       }
     }
 

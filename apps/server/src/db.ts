@@ -124,6 +124,40 @@ export function initDatabase(): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_themes_createdAt ON themes(createdAt)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_theme_shares_token ON theme_shares(shareToken)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_theme_ratings_theme ON theme_ratings(themeId)');
+
+  // Create settings table for retention configuration
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+
+  // Initialize default settings if they don't exist
+  initializeDefaultSettings();
+}
+
+// Default settings for retention
+const DEFAULT_SETTINGS: Record<string, string> = {
+  'retention.events.days': '30',
+  'retention.devlogs.days': '90',
+  'retention.sessions.days': '30',
+  'retention.archive.enabled': 'true',
+  'retention.archive.directory': './archives',
+  'retention.cleanup.interval.hours': '24'
+};
+
+function initializeDefaultSettings(): void {
+  const checkStmt = db.prepare('SELECT key FROM settings WHERE key = ?');
+  const insertStmt = db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+
+  for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
+    const exists = checkStmt.get(key);
+    if (!exists) {
+      insertStmt.run(key, value, Date.now());
+    }
+  }
 }
 
 export function insertEvent(event: HookEvent): HookEvent {
@@ -411,6 +445,33 @@ export function updateEventHITLResponse(id: number, response: any): HookEvent | 
     humanInTheLoopStatus: row.humanInTheLoopStatus ? JSON.parse(row.humanInTheLoopStatus) : undefined,
     model_name: row.model_name || undefined
   };
+}
+
+// Settings helper functions
+export function getSetting(key: string): string | null {
+  const stmt = db.prepare('SELECT value FROM settings WHERE key = ?');
+  const row = stmt.get(key) as { value: string } | undefined;
+  return row ? row.value : null;
+}
+
+export function setSetting(key: string, value: string): void {
+  const stmt = db.prepare(`
+    INSERT INTO settings (key, value, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?
+  `);
+  const now = Date.now();
+  stmt.run(key, value, now, value, now);
+}
+
+export function getAllSettings(): Record<string, string> {
+  const stmt = db.prepare('SELECT key, value FROM settings');
+  const rows = stmt.all() as Array<{ key: string; value: string }>;
+  const settings: Record<string, string> = {};
+  for (const row of rows) {
+    settings[row.key] = row.value;
+  }
+  return settings;
 }
 
 export { db };

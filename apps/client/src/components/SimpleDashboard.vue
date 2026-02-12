@@ -268,6 +268,64 @@
                 <span>{{ devServerText(activeProjectData) }}</span>
               </div>
 
+              <!-- Vercel deployment status -->
+              <div
+                v-if="deploymentInfo(activeProjectData)"
+                class="flex items-center gap-2 text-sm"
+              >
+                <Triangle
+                  class="w-3.5 h-3.5 shrink-0"
+                  :class="{
+                    'text-emerald-500': deploymentInfo(activeProjectData)!.state === 'ready',
+                    'text-amber-500 animate-pulse': deploymentInfo(activeProjectData)!.state === 'building' || deploymentInfo(activeProjectData)!.state === 'queued',
+                    'text-red-500': deploymentInfo(activeProjectData)!.state === 'error',
+                    'text-muted-foreground': deploymentInfo(activeProjectData)!.state === 'cancelled' || deploymentInfo(activeProjectData)!.state === 'unknown',
+                  }"
+                />
+                <span
+                  :class="{
+                    'text-emerald-600 dark:text-emerald-400': deploymentInfo(activeProjectData)!.state === 'ready',
+                    'text-amber-600 dark:text-amber-400': deploymentInfo(activeProjectData)!.state === 'building' || deploymentInfo(activeProjectData)!.state === 'queued',
+                    'text-red-600 dark:text-red-400': deploymentInfo(activeProjectData)!.state === 'error',
+                    'text-muted-foreground': deploymentInfo(activeProjectData)!.state === 'cancelled' || deploymentInfo(activeProjectData)!.state === 'unknown',
+                  }"
+                >
+                  {{ deploymentInfo(activeProjectData)!.text }}
+                </span>
+              </div>
+
+              <!-- GitHub CI status -->
+              <div
+                v-if="githubCIInfo(activeProjectData)"
+                class="flex items-center gap-2 text-sm"
+              >
+                <Check
+                  v-if="githubCIInfo(activeProjectData)!.passing"
+                  class="w-3.5 h-3.5 text-emerald-500 shrink-0"
+                />
+                <X
+                  v-else
+                  class="w-3.5 h-3.5 text-red-500 shrink-0"
+                />
+                <span
+                  :class="{
+                    'text-emerald-600 dark:text-emerald-400': githubCIInfo(activeProjectData)!.passing,
+                    'text-red-600 dark:text-red-400': !githubCIInfo(activeProjectData)!.passing,
+                  }"
+                >
+                  {{ githubCIInfo(activeProjectData)!.text }}
+                </span>
+              </div>
+
+              <!-- GitHub open PRs -->
+              <div
+                v-if="githubPRText(activeProjectData)"
+                class="flex items-center gap-2 text-sm text-foreground"
+              >
+                <GitPullRequest class="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                <span>{{ githubPRText(activeProjectData) }}</span>
+              </div>
+
               <!-- Last active time (only if no sessions at all) -->
               <div
                 v-if="allProjectSessions(activeProjectData.name).length === 0 && lastActiveTime(activeProjectData.name)"
@@ -291,12 +349,15 @@ import {
   humanizeEvent,
   humanizeTestStatus,
   humanizeDevServer,
+  humanizeDeployment,
+  humanizeGitHubCI,
+  humanizeGitHubPRs,
   humanizeTimeAgo,
   humanizeDuration,
   isNoisyEvent,
 } from '../utils/plainEnglish'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
-import { GitBranch, Check, X, Radio, Activity, EyeOff, Clock, Zap } from 'lucide-vue-next'
+import { GitBranch, GitPullRequest, Check, X, Radio, Triangle, Activity, EyeOff, Clock, Zap } from 'lucide-vue-next'
 
 interface TaskContext {
   prefix: string
@@ -597,6 +658,18 @@ function sessionDevLogSummary(session: Session): string | null {
 
 function devServerText(project: Project): string | null {
   return humanizeDevServer(project.dev_servers)
+}
+
+function deploymentInfo(project: Project): { text: string; state: string } | null {
+  return humanizeDeployment(project.deployment_status)
+}
+
+function githubCIInfo(project: Project): { text: string; passing: boolean } | null {
+  return humanizeGitHubCI(project.github_status)
+}
+
+function githubPRText(project: Project): string | null {
+  return humanizeGitHubPRs(project.github_status)
 }
 
 /** Wrapper that references _tick to force periodic re-evaluation of relative times */

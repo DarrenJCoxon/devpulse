@@ -532,6 +532,208 @@ export function isNoisyEvent(event: {
 }
 
 // ---------------------------------------------------------------------------
+// humanizeDeployment
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse deployment_status JSON into human-readable text + state for styling.
+ * Returns null if the JSON is empty or unparseable.
+ */
+export function humanizeDeployment(json: string): { text: string; state: string } | null {
+  if (!json) return null
+  try {
+    const d = JSON.parse(json)
+    if (!d || !d.state) return null
+
+    const state = (d.state || '').toUpperCase()
+    const msg = d.commit_message ? `: ${d.commit_message.slice(0, 60)}` : ''
+
+    switch (state) {
+      case 'READY':
+        return { text: `Deployed${msg}`, state: 'ready' }
+      case 'BUILDING':
+        return { text: `Building${msg}`, state: 'building' }
+      case 'ERROR':
+        return { text: `Deploy failed${msg}`, state: 'error' }
+      case 'QUEUED':
+        return { text: `Queued${msg}`, state: 'queued' }
+      case 'CANCELED':
+        return { text: `Deploy cancelled${msg}`, state: 'cancelled' }
+      default:
+        return { text: `Deploy: ${state.toLowerCase()}${msg}`, state: 'unknown' }
+    }
+  } catch {
+    return null
+  }
+}
+
+// ---------------------------------------------------------------------------
+// humanizeGitHubCI
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse github_status JSON and extract CI status text + pass/fail for styling.
+ * Returns null if no CI run data is available.
+ */
+export function humanizeGitHubCI(json: string): { text: string; passing: boolean } | null {
+  if (!json) return null
+  try {
+    const g = JSON.parse(json)
+    if (!g || !g.latest_run) return null
+
+    const run = g.latest_run
+    if (run.status === 'completed') {
+      if (run.conclusion === 'success') {
+        return { text: 'CI passing', passing: true }
+      }
+      return { text: `CI ${run.conclusion || 'failed'}`, passing: false }
+    }
+
+    // In-progress states
+    return { text: `CI ${run.status || 'running'}`, passing: true }
+  } catch {
+    return null
+  }
+}
+
+// ---------------------------------------------------------------------------
+// humanizeGitHubPRs
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse github_status JSON and return a human-readable PR count string.
+ * Returns null if no open PRs.
+ */
+export function humanizeGitHubPRs(json: string): string | null {
+  if (!json) return null
+  try {
+    const g = JSON.parse(json)
+    if (!g || !Array.isArray(g.open_prs) || g.open_prs.length === 0) return null
+
+    const count = g.open_prs.length
+    return `${count} open PR${count !== 1 ? 's' : ''}`
+  } catch {
+    return null
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Activity item type for integration feeds
+// ---------------------------------------------------------------------------
+
+export interface ActivityItem {
+  id: string
+  projectName: string
+  description: string
+  timestamp: number
+  color: string
+}
+
+// ---------------------------------------------------------------------------
+// getGitHubActivityItems
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract timestamped activity items from github_status for the activity feed.
+ * Returns recent commits and PR updates as activity items.
+ */
+export function getGitHubActivityItems(
+  json: string,
+  projectName: string,
+  color: string,
+): ActivityItem[] {
+  if (!json) return []
+  try {
+    const g = JSON.parse(json)
+    if (!g) return []
+
+    const items: ActivityItem[] = []
+
+    // Add recent commits
+    if (Array.isArray(g.recent_commits)) {
+      for (const c of g.recent_commits) {
+        if (!c.date) continue
+        items.push({
+          id: `gh-commit-${c.sha || c.date}`,
+          projectName,
+          description: `[GitHub] ${c.author || 'Someone'} pushed: ${c.message || 'commit'}`,
+          timestamp: c.date,
+          color,
+        })
+      }
+    }
+
+    // Add latest CI run result
+    if (g.latest_run && g.latest_run.created_at) {
+      const run = g.latest_run
+      const conclusion = run.conclusion
+        ? run.conclusion === 'success' ? 'passed' : run.conclusion
+        : run.status || 'started'
+      items.push({
+        id: `gh-ci-${run.created_at}`,
+        projectName,
+        description: `[GitHub] CI ${conclusion}: ${run.name || 'workflow'}`,
+        timestamp: run.created_at,
+        color,
+      })
+    }
+
+    return items
+  } catch {
+    return []
+  }
+}
+
+// ---------------------------------------------------------------------------
+// getVercelActivityItems
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract deployment changes as activity items for the activity feed.
+ */
+export function getVercelActivityItems(
+  json: string,
+  projectName: string,
+  color: string,
+): ActivityItem[] {
+  if (!json) return []
+  try {
+    const d = JSON.parse(json)
+    if (!d || !d.state || !d.created) return []
+
+    const state = (d.state || '').toUpperCase()
+    let desc = ''
+    switch (state) {
+      case 'READY':
+        desc = `[Vercel] Deployed successfully`
+        break
+      case 'BUILDING':
+        desc = `[Vercel] Building deployment`
+        break
+      case 'ERROR':
+        desc = `[Vercel] Deployment failed`
+        break
+      default:
+        desc = `[Vercel] Deployment ${state.toLowerCase()}`
+    }
+
+    if (d.commit_message) {
+      desc += `: ${d.commit_message.slice(0, 60)}`
+    }
+
+    return [{
+      id: `vercel-${d.created}`,
+      projectName,
+      description: desc,
+      timestamp: d.created,
+      color,
+    }]
+  } catch {
+    return []
+  }
+}
+
+// ---------------------------------------------------------------------------
 // basename
 // ---------------------------------------------------------------------------
 

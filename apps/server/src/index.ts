@@ -11,6 +11,7 @@ import {
   deleteThemeById, exportThemeById, importTheme, getThemeStats
 } from './theme';
 import { initVercelPoller } from './vercel';
+import { initGitHubPoller } from './github';
 import { initSummaries, getDailySummary, getWeeklySummary } from './summaries';
 import { getCostsByProject, getCostsBySession, getDailyCosts } from './costs';
 import { initMetrics, getSessionMetrics, getProjectMetrics } from './metrics';
@@ -22,6 +23,7 @@ import { runCleanup, getAdminStats } from './retention';
 initDatabase();
 initEnricher(getDb());
 initVercelPoller(getDb());
+initGitHubPoller(getDb());
 initSummaries(getDb());
 initMetrics(getDb());
 
@@ -1194,8 +1196,14 @@ const server = Bun.serve({
           });
         }
 
-        // Check if directory exists
-        const dirExists = await Bun.file(path).exists();
+        // Check if directory exists (Bun.file only works for files, use node:fs for directories)
+        const { existsSync, statSync } = require('node:fs');
+        let dirExists = false;
+        try {
+          dirExists = existsSync(path) && statSync(path).isDirectory();
+        } catch {
+          dirExists = false;
+        }
         if (!dirExists) {
           return new Response(JSON.stringify({
             exists: false,
@@ -1286,8 +1294,14 @@ const server = Bun.serve({
           });
         }
 
-        // Verify directory exists
-        const dirExists = await Bun.file(projectPath).exists();
+        // Verify directory exists (Bun.file only works for files, use node:fs for directories)
+        const { existsSync: dirExistsSync, statSync: dirStatSync } = require('node:fs');
+        let dirExists = false;
+        try {
+          dirExists = dirExistsSync(projectPath) && dirStatSync(projectPath).isDirectory();
+        } catch {
+          dirExists = false;
+        }
         if (!dirExists) {
           return new Response(JSON.stringify({
             success: false,
@@ -1296,8 +1310,10 @@ const server = Bun.serve({
           }), { status: 400, headers: jsonHeaders });
         }
 
-        // Execute install-hooks.sh script
-        const scriptPath = './scripts/install-hooks.sh';
+        // Execute install-hooks.sh script (resolve from project root, two levels up from apps/server/)
+        const { resolve: resolvePath } = require('node:path');
+        const projectRoot = resolvePath(process.cwd(), '..', '..');
+        const scriptPath = resolvePath(projectRoot, 'scripts', 'install-hooks.sh');
         const finalServerUrl: string = serverUrl || `http://localhost:${SERVER_PORT}/events`;
 
         const proc: ReturnType<typeof Bun.spawn> = Bun.spawn([
@@ -1306,7 +1322,7 @@ const server = Bun.serve({
           projectName,
           finalServerUrl
         ], {
-          cwd: process.cwd(),
+          cwd: projectRoot,
           stdout: 'pipe',
           stderr: 'pipe'
         });

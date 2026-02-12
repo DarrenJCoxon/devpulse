@@ -6,6 +6,9 @@ import {
   humanizeTimeAgo,
   getProjectColor,
   isNoisyEvent,
+  getGitHubActivityItems,
+  getVercelActivityItems,
+  type ActivityItem as IntegrationItem,
 } from '../utils/plainEnglish'
 import { Input } from './ui/input'
 import { ScrollArea } from './ui/scroll-area'
@@ -105,6 +108,31 @@ interface ActivityItem {
   color: string
 }
 
+// Compute integration items from project data (GitHub + Vercel)
+const integrationItems = computed<ActivityItem[]>(() => {
+  const projectNames = allProjectNames.value
+  const hidden = hiddenProjects.value
+  const items: ActivityItem[] = []
+
+  for (const project of props.projects) {
+    if (hidden.has(project.name)) continue
+
+    const color = getProjectColor(project.name, projectNames)
+
+    // GitHub activity items
+    if (project.github_status) {
+      items.push(...getGitHubActivityItems(project.github_status, project.name, color))
+    }
+
+    // Vercel activity items
+    if (project.deployment_status) {
+      items.push(...getVercelActivityItems(project.deployment_status, project.name, color))
+    }
+  }
+
+  return items
+})
+
 const filteredItems = computed<ActivityItem[]>(() => {
   void _tick.value // force periodic re-evaluation for relative timestamps
   const query = searchQuery.value.toLowerCase().trim()
@@ -161,7 +189,29 @@ const filteredItems = computed<ActivityItem[]>(() => {
     })
   }
 
-  return items
+  // Merge integration items (GitHub/Vercel) into the timeline
+  const merged = [...items]
+
+  for (const item of integrationItems.value) {
+    // Apply search filter to integration items too
+    if (query) {
+      const matchTarget = `${item.projectName} ${item.description}`.toLowerCase()
+      if (!matchTarget.includes(query)) continue
+    }
+
+    merged.push({
+      id: item.id,
+      projectName: item.projectName,
+      description: item.description,
+      timeAgo: humanizeTimeAgo(item.timestamp),
+      timestamp: item.timestamp,
+      color: item.color,
+    })
+  }
+
+  // Sort merged list by timestamp descending and limit
+  merged.sort((a, b) => b.timestamp - a.timestamp)
+  return merged.slice(0, 100)
 })
 </script>
 

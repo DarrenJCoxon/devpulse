@@ -45,6 +45,7 @@ export function initEnricher(database: Database): void {
       test_summary TEXT DEFAULT '',
       dev_servers TEXT DEFAULT '[]',
       deployment_status TEXT DEFAULT '',
+      github_status TEXT DEFAULT '',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )
@@ -53,6 +54,13 @@ export function initEnricher(database: Database): void {
   // Migration: Add deployment_status column if it doesn't exist (safe for existing databases)
   try {
     db.exec(`ALTER TABLE projects ADD COLUMN deployment_status TEXT DEFAULT ''`);
+  } catch {
+    // Column already exists, ignore
+  }
+
+  // Migration: Add github_status column if it doesn't exist
+  try {
+    db.exec(`ALTER TABLE projects ADD COLUMN github_status TEXT DEFAULT ''`);
   } catch {
     // Column already exists, ignore
   }
@@ -430,8 +438,8 @@ function upsertProject(name: string, path: string, branch: string, now: number):
     db.prepare(`UPDATE projects SET ${updates.join(', ')} WHERE name = ?`).run(...params);
   } else {
     db.prepare(`
-      INSERT INTO projects (name, path, current_branch, active_sessions, last_activity, test_status, test_summary, dev_servers, deployment_status, created_at, updated_at)
-      VALUES (?, ?, ?, 0, ?, 'unknown', '', '[]', '', ?, ?)
+      INSERT INTO projects (name, path, current_branch, active_sessions, last_activity, test_status, test_summary, dev_servers, deployment_status, github_status, created_at, updated_at)
+      VALUES (?, ?, ?, 0, ?, 'unknown', '', '[]', '', '', ?, ?)
     `).run(name, path || '', branch || 'main', now, now, now);
   }
 }
@@ -807,7 +815,20 @@ function buildAutoSummary(
   const searches = (toolBreakdown['Glob'] || 0) + (toolBreakdown['Grep'] || 0);
   const subagents = toolBreakdown['Task'] || 0;
 
-  // Humanize the branch name for the summary
+  // Clean commit messages — these describe WHAT was done
+  const cleanCommits = (commits || []).filter(c => {
+    if (!c || c.trim().length < 3) return false;
+    if (c.includes('$(cat') || c.includes('<<') || c.includes('EOF')) return false;
+    if (c.startsWith('Co-Authored')) return false;
+    return true;
+  });
+
+  // If we have commit messages, use them as the summary — they describe the actual work
+  if (cleanCommits.length > 0) {
+    return cleanCommits.join(' | ');
+  }
+
+  // Humanize the branch name for fallback summary
   const branchDisplay = branch
     .replace(/^[a-zA-Z]+\//, '')
     .replace(/^[\d.]+[-_]/, '')
@@ -815,52 +836,62 @@ function buildAutoSummary(
     .replace(/[-_]+/g, ' ')
     .trim() || branch;
 
-  // Determine the primary activity
-  const activities: string[] = [];
+  // No commits — build a descriptive fallback from file names and actions
+  const parts: string[] = [];
 
-  if (writes === 0 && bashOps === 0 && searches > 0) {
-    activities.push('Explored and reviewed the codebase');
-  } else if (writes > 0) {
-    if (newFiles > 5 && edits < newFiles) {
-      activities.push(`Created ${newFiles} new files and scaffolded project structure`);
-    } else if (newFiles > 0 && edits > 0) {
-      activities.push(`Created ${newFiles} new file${newFiles > 1 ? 's' : ''} and edited ${edits} existing file${edits > 1 ? 's' : ''}`);
-    } else if (edits > 0) {
-      activities.push(`Made changes across ${fileCount} file${fileCount !== 1 ? 's' : ''}`);
+  // Describe what was changed using actual file names
+  if (filesChanged && filesChanged.size > 0) {
+    const fileNames = [...filesChanged].map(f => {
+      const segments = f.replace(/\\/g, '/').split('/');
+      return segments[segments.length - 1] || f;
+    });
+
+    // Deduplicate filenames
+    const unique = [...new Set(fileNames)];
+
+    if (unique.length <= 3) {
+      if (newFiles > 0 && edits > 0) {
+        parts.push(`Created and edited ${unique.join(', ')}`);
+      } else if (newFiles > 0) {
+        parts.push(`Created ${unique.join(', ')}`);
+      } else {
+        parts.push(`Edited ${unique.join(', ')}`);
+      }
     } else {
-      activities.push(`Created ${newFiles} new file${newFiles > 1 ? 's' : ''}`);
+      // Show first 2-3 notable files + count
+      const shown = unique.slice(0, 3).join(', ');
+      const remaining = unique.length - 3;
+      if (newFiles > 0 && edits > 0) {
+        parts.push(`Created and edited ${shown} and ${remaining} more file${remaining !== 1 ? 's' : ''}`);
+      } else {
+        parts.push(`Edited ${shown} and ${remaining} more file${remaining !== 1 ? 's' : ''}`);
+      }
+    }
+  } else if (writes === 0 && bashOps === 0 && searches > 0) {
+    parts.push('Explored and reviewed the codebase');
+  } else if (writes > 0) {
+    if (newFiles > 0 && edits > 0) {
+      parts.push(`Created ${newFiles} new file${newFiles > 1 ? 's' : ''} and edited ${edits} existing`);
+    } else if (edits > 0) {
+      parts.push(`Edited ${fileCount} file${fileCount !== 1 ? 's' : ''}`);
+    } else {
+      parts.push(`Created ${newFiles} new file${newFiles > 1 ? 's' : ''}`);
     }
   }
 
-  if (bashOps > 10) {
-    activities.push('ran tests and build commands');
-  } else if (bashOps > 0) {
-    activities.push('ran commands');
-  }
-
-  if (commitCount > 0) {
-    activities.push(`committed ${commitCount} change${commitCount > 1 ? 's' : ''}`);
-  }
-
   if (subagents > 0) {
-    activities.push(`delegated ${subagents} task${subagents > 1 ? 's' : ''} to helper agents`);
+    parts.push(`delegated ${subagents} task${subagents > 1 ? 's' : ''} to sub-agents`);
   }
 
-  if (activities.length === 0) {
+  if (parts.length === 0) {
     return `Brief review session on ${branchDisplay}`;
   }
 
-  // Capitalise first activity, join the rest with commas
-  const firstActivity = activities[0] ?? '';
-  const first = firstActivity.charAt(0).toUpperCase() + firstActivity.slice(1);
-  if (activities.length === 1) {
-    return `${first} for ${branchDisplay}.`;
+  const first = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+  if (parts.length === 1) {
+    return first;
   }
-
-  const rest = activities.slice(1);
-  const last = rest.pop();
-  const middle = rest.length > 0 ? rest.join(', ') + ', and ' : '';
-  return `${first}, ${middle}${last} for ${branchDisplay}.`;
+  return `${first}, ${parts.slice(1).join(', ')}`;
 }
 
 // --- Dev Note Markdown Writer ---
@@ -1187,7 +1218,7 @@ function trackFileAccessFromEvent(event: HookEvent, projectName: string): void {
 export function getAllProjects(): Project[] {
   const projects = db.prepare(`
     SELECT id, name, path, current_branch, active_sessions, last_activity,
-           test_status, test_summary, dev_servers, deployment_status, health,
+           test_status, test_summary, dev_servers, deployment_status, github_status, health,
            created_at, updated_at
     FROM projects
     ORDER BY last_activity DESC
@@ -1203,7 +1234,7 @@ export function getAllProjects(): Project[] {
 export function getProjectByName(name: string): Project | null {
   const project = db.prepare(`
     SELECT id, name, path, current_branch, active_sessions, last_activity,
-           test_status, test_summary, dev_servers, deployment_status, health,
+           test_status, test_summary, dev_servers, deployment_status, github_status, health,
            created_at, updated_at
     FROM projects
     WHERE name = ?

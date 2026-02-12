@@ -57,7 +57,7 @@ kill_port $CLIENT_PORT "client"
 # Start server
 echo -e "\n${GREEN}Starting server on port $SERVER_PORT...${NC}"
 cd "$PROJECT_ROOT/apps/server"
-SERVER_PORT=$SERVER_PORT bun run dev &
+SERVER_PORT=$SERVER_PORT bun --env-file "$PROJECT_ROOT/.env" --watch src/index.ts &
 SERVER_PID=$!
 
 # Wait for server to be ready

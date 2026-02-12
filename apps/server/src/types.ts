@@ -73,6 +73,7 @@ export interface Project {
   test_summary: string;
   dev_servers: string;        // JSON array of {port, type}
   deployment_status: string;  // JSON string: {state, url, commit_message, created, vercel_project_id}
+  github_status: string;      // JSON string: GitHubStatus
   health?: ProjectHealth;     // E5-S4: Health score and components
   created_at: number;
   updated_at: number;

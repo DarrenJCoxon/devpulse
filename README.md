@@ -2,7 +2,7 @@
 
 Real-time development dashboard for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Monitor multiple concurrent sessions across all your projects from a single browser tab.
 
-<img src="images/app.png" alt="DevPulse Dashboard" style="max-width: 800px; width: 100%;">
+<img src="images/dashboard.png" alt="DevPulse Dashboard — two concurrent Claude Code sessions on the same project" style="max-width: 800px; width: 100%;">
 
 ## What it does
 

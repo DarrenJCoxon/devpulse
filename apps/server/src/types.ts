@@ -363,3 +363,22 @@ export interface FileConflict {
   detected_at: number;
   dismissed: boolean;
 }
+
+// --- Webhook types (E6-S5) ---
+
+export interface Webhook {
+  id: string;
+  name: string;
+  url: string;
+  secret: string;
+  event_types: string;     // JSON array of event type strings
+  project_filter: string;  // Empty = all projects
+  active: number;          // SQLite boolean (0 or 1)
+  created_at: number;
+  updated_at: number;
+  last_triggered_at: number | null;
+  last_status: number | null;
+  last_error: string | null;
+  trigger_count: number;
+  failure_count: number;
+}

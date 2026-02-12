@@ -268,6 +268,16 @@
       <ActivityHeatmap :projects="projects" />
     </div>
 
+    <!-- Webhooks Tab -->
+    <div v-if="activeTab === 'webhooks'" class="flex-1 overflow-auto">
+      <WebhookManager />
+    </div>
+
+    <!-- API Docs Tab -->
+    <div v-if="activeTab === 'api-docs'" class="flex-1 overflow-auto">
+      <ApiDocs />
+    </div>
+
     <!-- Error message -->
     <div
       v-if="error"
@@ -386,6 +396,8 @@ import AlertBanner from './components/AlertBanner.vue';
 import HookWizard from './components/HookWizard.vue';
 import ActivityHeatmap from './components/ActivityHeatmap.vue';
 import RetentionSettings from './components/RetentionSettings.vue';
+import WebhookManager from './components/WebhookManager.vue';
+import ApiDocs from './components/ApiDocs.vue';
 import { WS_URL } from './config';
 
 // Tab navigation
@@ -398,8 +410,10 @@ const tabs = [
   { id: 'costs' as const, label: 'Costs' },
   { id: 'metrics' as const, label: 'Metrics' },
   { id: 'analytics' as const, label: 'Analytics' },
+  { id: 'webhooks' as const, label: 'Webhooks' },
+  { id: 'api-docs' as const, label: 'API Docs' },
 ];
-const activeTab = ref<'projects' | 'events' | 'topology' | 'devlog' | 'summaries' | 'costs' | 'metrics' | 'analytics'>('projects');
+const activeTab = ref<'projects' | 'events' | 'topology' | 'devlog' | 'summaries' | 'costs' | 'metrics' | 'analytics' | 'webhooks' | 'api-docs'>('projects');
 
 // WebSocket connection
 const { events, isConnected, error, clearEvents, projects, sessions, topology, conflicts, alerts } = useWebSocket(WS_URL);
@@ -692,6 +706,26 @@ onMounted(() => {
     keywords: ['analytics', 'heatmap', 'activity'],
     icon: '📅',
     execute: () => { activeTab.value = 'analytics'; }
+  });
+
+  // Action: Navigate to Webhooks tab
+  registerAction({
+    id: 'nav-webhooks',
+    label: 'Go to Webhooks Tab',
+    category: 'navigate',
+    keywords: ['webhooks', 'integrations', 'notifications'],
+    icon: '🔗',
+    execute: () => { activeTab.value = 'webhooks'; }
+  });
+
+  // Action: Navigate to API Docs tab
+  registerAction({
+    id: 'nav-api-docs',
+    label: 'Go to API Docs Tab',
+    category: 'navigate',
+    keywords: ['api', 'docs', 'documentation', 'reference'],
+    icon: '📚',
+    execute: () => { activeTab.value = 'api-docs'; }
   });
 
   // Action: Open retention settings

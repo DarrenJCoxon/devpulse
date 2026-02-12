@@ -4,7 +4,8 @@ import {
   getProjectStatus, getRecentDevLogs, getDevLogsForProject,
   markIdleSessions, cleanupOldSessions, cleanupOldFileAccessLogs, scanPorts, getAgentTopology
 } from './enricher';
-import type { HookEvent, HumanInTheLoopResponse } from './types';
+import type { HookEvent, HumanInTheLoopResponse, Webhook } from './types';
+import { triggerWebhooks, testWebhook } from './webhooks';
 import {
   createTheme, updateThemeById, getThemeById, searchThemes,
   deleteThemeById, exportThemeById, importTheme, getThemeStats
@@ -533,6 +534,11 @@ const server = Bun.serve({
         } catch (err) {
           console.error('[Enricher] Error:', err);
         }
+
+        // Trigger webhooks (fire and forget)
+        triggerWebhooks(getDb(), savedEvent).catch(err => {
+          console.error('[Webhook] Error:', err);
+        });
 
         // Broadcast to WebSocket clients
         const message = JSON.stringify({ type: 'event', data: savedEvent });
@@ -1365,6 +1371,206 @@ const server = Bun.serve({
           status: 500, headers: jsonHeaders
         });
       }
+    }
+
+    // =============================================
+    // WEBHOOKS API (E6-S5)
+    // =============================================
+
+    // GET /api/webhooks - List all webhooks
+    if (url.pathname === '/api/webhooks' && req.method === 'GET') {
+      try {
+        const stmt = getDb().prepare('SELECT * FROM webhooks ORDER BY created_at DESC');
+        const webhooks = stmt.all() as Webhook[];
+        return new Response(JSON.stringify(webhooks), { headers: jsonHeaders });
+      } catch (error: any) {
+        console.error('[Webhooks API] Error:', error);
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
+    }
+
+    // POST /api/webhooks - Create webhook
+    if (url.pathname === '/api/webhooks' && req.method === 'POST') {
+      try {
+        const body = await req.json() as {
+          name: string;
+          url: string;
+          secret?: string;
+          eventTypes?: string[];
+          projectFilter?: string;
+        };
+
+        const { name, url: webhookUrl, secret, eventTypes, projectFilter } = body;
+
+        if (!name || !webhookUrl) {
+          return new Response(JSON.stringify({ error: 'Missing required fields: name, url' }), {
+            status: 400, headers: jsonHeaders
+          });
+        }
+
+        const now = Date.now();
+        const id = `webhook-${now}-${Math.random().toString(36).slice(2, 11)}`;
+
+        const stmt = getDb().prepare(`
+          INSERT INTO webhooks (id, name, url, secret, event_types, project_filter, active, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+        `);
+
+        stmt.run(
+          id,
+          name,
+          webhookUrl,
+          secret || '',
+          JSON.stringify(eventTypes || []),
+          projectFilter || '',
+          now,
+          now
+        );
+
+        const selectStmt = getDb().prepare('SELECT * FROM webhooks WHERE id = ?');
+        const webhook = selectStmt.get(id) as Webhook;
+
+        return new Response(JSON.stringify(webhook), {
+          status: 201,
+          headers: jsonHeaders
+        });
+      } catch (error: any) {
+        console.error('[Webhooks API] Error:', error);
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
+    }
+
+    // PUT /api/webhooks/:id - Update webhook
+    if (url.pathname.match(/^\/api\/webhooks\/[^\/]+$/) && req.method === 'PUT') {
+      try {
+        const id = url.pathname.split('/')[3];
+        const body = await req.json() as {
+          name?: string;
+          url?: string;
+          secret?: string;
+          eventTypes?: string[];
+          projectFilter?: string;
+          active?: boolean;
+        };
+
+        const updates: string[] = [];
+        const values: any[] = [];
+
+        if (body.name !== undefined) {
+          updates.push('name = ?');
+          values.push(body.name);
+        }
+        if (body.url !== undefined) {
+          updates.push('url = ?');
+          values.push(body.url);
+        }
+        if (body.secret !== undefined) {
+          updates.push('secret = ?');
+          values.push(body.secret);
+        }
+        if (body.eventTypes !== undefined) {
+          updates.push('event_types = ?');
+          values.push(JSON.stringify(body.eventTypes));
+        }
+        if (body.projectFilter !== undefined) {
+          updates.push('project_filter = ?');
+          values.push(body.projectFilter);
+        }
+        if (body.active !== undefined) {
+          updates.push('active = ?');
+          values.push(body.active ? 1 : 0);
+        }
+
+        if (updates.length === 0) {
+          return new Response(JSON.stringify({ error: 'No fields to update' }), {
+            status: 400, headers: jsonHeaders
+          });
+        }
+
+        updates.push('updated_at = ?');
+        values.push(Date.now());
+        values.push(id);
+
+        const stmt = getDb().prepare(`
+          UPDATE webhooks SET ${updates.join(', ')} WHERE id = ?
+        `);
+        const result = stmt.run(...values);
+
+        if (result.changes === 0) {
+          return new Response(JSON.stringify({ error: 'Webhook not found' }), {
+            status: 404, headers: jsonHeaders
+          });
+        }
+
+        const selectStmt = getDb().prepare('SELECT * FROM webhooks WHERE id = ?');
+        const webhook = selectStmt.get(id) as Webhook;
+
+        return new Response(JSON.stringify(webhook), { headers: jsonHeaders });
+      } catch (error: any) {
+        console.error('[Webhooks API] Error:', error);
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
+    }
+
+    // DELETE /api/webhooks/:id - Delete webhook
+    if (url.pathname.match(/^\/api\/webhooks\/[^\/]+$/) && req.method === 'DELETE') {
+      try {
+        const id = url.pathname.split('/')[3];
+        const stmt = getDb().prepare('DELETE FROM webhooks WHERE id = ?');
+        const result = stmt.run(id);
+
+        if (result.changes === 0) {
+          return new Response(JSON.stringify({ error: 'Webhook not found' }), {
+            status: 404, headers: jsonHeaders
+          });
+        }
+
+        return new Response(JSON.stringify({ success: true }), { headers: jsonHeaders });
+      } catch (error: any) {
+        console.error('[Webhooks API] Error:', error);
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
+    }
+
+    // POST /api/webhooks/:id/test - Test webhook
+    if (url.pathname.match(/^\/api\/webhooks\/[^\/]+\/test$/) && req.method === 'POST') {
+      try {
+        const id = url.pathname.split('/')[3];
+        const stmt = getDb().prepare('SELECT * FROM webhooks WHERE id = ?');
+        const webhook = stmt.get(id) as Webhook | undefined;
+
+        if (!webhook) {
+          return new Response(JSON.stringify({ error: 'Webhook not found' }), {
+            status: 404, headers: jsonHeaders
+          });
+        }
+
+        const result = await testWebhook(webhook);
+        return new Response(JSON.stringify(result), { headers: jsonHeaders });
+      } catch (error: any) {
+        console.error('[Webhooks API] Error:', error);
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
+    }
+
+    // GET /api/docs - API documentation
+    if (url.pathname === '/api/docs' && req.method === 'GET') {
+      // This endpoint is a placeholder - the actual documentation is static
+      // and will be served by the client's apiDocs.ts file
+      return new Response(JSON.stringify({
+        message: 'API documentation available in the client application',
+        version: '1.0.0'
+      }), { headers: jsonHeaders });
     }
 
     // =============================================

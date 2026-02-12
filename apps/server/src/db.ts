@@ -125,6 +125,26 @@ export function initDatabase(): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_theme_shares_token ON theme_shares(shareToken)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_theme_ratings_theme ON theme_ratings(themeId)');
 
+  // Create webhooks table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS webhooks (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      url TEXT NOT NULL,
+      secret TEXT DEFAULT '',
+      event_types TEXT NOT NULL DEFAULT '[]',
+      project_filter TEXT DEFAULT '',
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      last_triggered_at INTEGER,
+      last_status INTEGER,
+      last_error TEXT,
+      trigger_count INTEGER DEFAULT 0,
+      failure_count INTEGER DEFAULT 0
+    )
+  `);
+
   // Create settings table for retention configuration
   db.exec(`
     CREATE TABLE IF NOT EXISTS settings (

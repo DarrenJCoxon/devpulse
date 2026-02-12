@@ -1282,7 +1282,7 @@ export function getAllProjects(): Project[] {
            test_status, test_summary, dev_servers, deployment_status, github_status, health,
            created_at, updated_at
     FROM projects
-    ORDER BY last_activity DESC
+    ORDER BY created_at ASC
   `).all() as any[];
 
   // Parse health JSON for each project

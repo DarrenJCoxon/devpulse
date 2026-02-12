@@ -487,6 +487,65 @@ const server = Bun.serve({
       }
     }
 
+    // GET /api/analytics/heatmap - Get activity heatmap data (E6-S1)
+    if (url.pathname === '/api/analytics/heatmap' && req.method === 'GET') {
+      try {
+        const daysParam = url.searchParams.get('days');
+        const days = daysParam ? parseInt(daysParam) : 30;
+        const project = url.searchParams.get('project');
+
+        // Validate days parameter
+        if (isNaN(days) || days < 1 || days > 365) {
+          return new Response(JSON.stringify({ error: 'Invalid days parameter. Must be between 1 and 365' }), {
+            status: 400, headers: jsonHeaders
+          });
+        }
+
+        // Calculate timestamp threshold
+        const now = Date.now();
+        const threshold = now - (days * 86400000);
+
+        // Build SQL query
+        let sql = `
+          SELECT
+            date(timestamp/1000, 'unixepoch', 'localtime') as day,
+            CAST(strftime('%H', timestamp/1000, 'unixepoch', 'localtime') AS INTEGER) as hour,
+            COUNT(*) as count
+          FROM events
+          WHERE timestamp > ?
+        `;
+        const params: any[] = [threshold];
+
+        // Add optional project filter
+        if (project && project !== 'all') {
+          sql += ' AND source_app = ?';
+          params.push(project);
+        }
+
+        sql += ' GROUP BY day, hour ORDER BY day, hour';
+
+        // Execute query
+        const stmt = getDb().prepare(sql);
+        const rows = stmt.all(...params) as any[];
+
+        // Transform to cells array and find max count
+        const cells = rows.map(row => ({
+          day: row.day,
+          hour: row.hour,
+          count: row.count
+        }));
+
+        const maxCount = rows.length > 0 ? Math.max(...rows.map(r => r.count)) : 0;
+
+        return new Response(JSON.stringify({ cells, maxCount }), { headers: jsonHeaders });
+      } catch (error: any) {
+        console.error('[Heatmap API] Error:', error);
+        return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
+          status: 500, headers: jsonHeaders
+        });
+      }
+    }
+
     // POST /api/validate-path - Validate project path (E5-S5)
     if (url.pathname === '/api/validate-path' && req.method === 'POST') {
       try {

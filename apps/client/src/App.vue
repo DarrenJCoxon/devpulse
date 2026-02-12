@@ -238,6 +238,11 @@
       <AgentMetrics />
     </div>
 
+    <!-- Analytics Tab -->
+    <div v-if="activeTab === 'analytics'" class="flex-1 overflow-auto p-4">
+      <ActivityHeatmap :projects="projects" />
+    </div>
+
     <!-- Error message -->
     <div
       v-if="error"
@@ -347,6 +352,7 @@ import AgentMetrics from './components/AgentMetrics.vue';
 import ConflictPanel from './components/ConflictPanel.vue';
 import AlertBanner from './components/AlertBanner.vue';
 import HookWizard from './components/HookWizard.vue';
+import ActivityHeatmap from './components/ActivityHeatmap.vue';
 import { WS_URL } from './config';
 
 // Tab navigation
@@ -358,8 +364,9 @@ const tabs = [
   { id: 'summaries' as const, label: 'Summaries' },
   { id: 'costs' as const, label: 'Costs' },
   { id: 'metrics' as const, label: 'Metrics' },
+  { id: 'analytics' as const, label: 'Analytics' },
 ];
-const activeTab = ref<'projects' | 'events' | 'topology' | 'devlog' | 'summaries' | 'costs' | 'metrics'>('projects');
+const activeTab = ref<'projects' | 'events' | 'topology' | 'devlog' | 'summaries' | 'costs' | 'metrics' | 'analytics'>('projects');
 
 // WebSocket connection
 const { events, isConnected, error, clearEvents, projects, sessions, topology, conflicts, alerts } = useWebSocket(WS_URL);
@@ -630,6 +637,16 @@ onMounted(() => {
     keywords: ['metrics', 'performance', 'stats'],
     icon: '📈',
     execute: () => { activeTab.value = 'metrics'; }
+  });
+
+  // Action: Navigate to Analytics tab
+  registerAction({
+    id: 'nav-analytics',
+    label: 'Go to Analytics Tab',
+    category: 'navigate',
+    keywords: ['analytics', 'heatmap', 'activity'],
+    icon: '📅',
+    execute: () => { activeTab.value = 'analytics'; }
   });
 });
 </script>

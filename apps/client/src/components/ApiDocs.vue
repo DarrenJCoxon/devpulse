@@ -1,13 +1,13 @@
 <template>
-  <div class="h-full overflow-y-auto bg-[var(--theme-bg-secondary)]">
-    <div class="max-w-7xl mx-auto p-6">
+  <div class="h-full overflow-y-auto bg-muted">
+    <div class="max-w-6xl mx-auto w-full px-6 py-6">
       <!-- Header -->
       <div class="mb-8">
-        <h1 class="text-3xl font-bold text-[var(--theme-text-primary)] mb-2">
+        <h1 class="text-3xl font-bold text-foreground mb-2">
           API Documentation
         </h1>
-        <p class="text-[var(--theme-text-secondary)]">
-          Version {{ apiDocumentation.version }} | Base URL: <code class="text-xs bg-[var(--theme-bg-tertiary)] px-2 py-1 rounded">{{ apiDocumentation.baseUrl }}</code>
+        <p class="text-muted-foreground">
+          Version {{ apiDocumentation.version }} | Base URL: <code class="text-xs bg-muted/50 px-2 py-1 rounded">{{ apiDocumentation.baseUrl }}</code>
         </p>
       </div>
 
@@ -17,19 +17,19 @@
           v-model="searchQuery"
           type="text"
           placeholder="Search endpoints..."
-          class="w-full px-4 py-2 bg-[var(--theme-bg-primary)] border border-[var(--theme-border-primary)] rounded-lg text-[var(--theme-text-primary)] placeholder-[var(--theme-text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--theme-primary)]"
+          class="w-full px-4 py-2 bg-card border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
         />
       </div>
 
       <!-- Tabs -->
-      <div class="mb-6 border-b border-[var(--theme-border-primary)]">
+      <div class="mb-6 border-b border-border">
         <div class="flex space-x-4">
           <button
             @click="activeTab = 'rest'"
             class="px-4 py-2 font-medium transition-colors"
             :class="activeTab === 'rest'
-              ? 'text-[var(--theme-primary)] border-b-2 border-[var(--theme-primary)]'
-              : 'text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-secondary)]'"
+              ? 'text-primary border-b-2 border-primary'
+              : 'text-muted-foreground hover:text-foreground'"
           >
             REST API
           </button>
@@ -37,8 +37,8 @@
             @click="activeTab = 'websocket'"
             class="px-4 py-2 font-medium transition-colors"
             :class="activeTab === 'websocket'
-              ? 'text-[var(--theme-primary)] border-b-2 border-[var(--theme-primary)]'
-              : 'text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-secondary)]'"
+              ? 'text-primary border-b-2 border-primary'
+              : 'text-muted-foreground hover:text-foreground'"
           >
             WebSocket
           </button>
@@ -47,13 +47,13 @@
 
       <!-- REST API Endpoints -->
       <div v-if="activeTab === 'rest'" class="space-y-6">
-        <div
+        <Card
           v-for="endpoint in filteredEndpoints"
           :key="`${endpoint.method}-${endpoint.path}`"
-          class="bg-[var(--theme-bg-primary)] border border-[var(--theme-border-primary)] rounded-lg overflow-hidden"
+          class="overflow-hidden"
         >
           <!-- Endpoint Header -->
-          <div class="p-4 border-b border-[var(--theme-border-primary)]">
+          <CardHeader class="pb-3 border-b border-border">
             <div class="flex items-center space-x-3">
               <span
                 class="px-3 py-1 rounded-md text-sm font-bold"
@@ -61,37 +61,37 @@
               >
                 {{ endpoint.method }}
               </span>
-              <code class="text-sm font-mono text-[var(--theme-text-primary)]">
+              <code class="text-sm font-mono text-foreground">
                 {{ endpoint.path }}
               </code>
             </div>
-            <p class="mt-2 text-sm text-[var(--theme-text-secondary)]">
+            <p class="mt-2 text-sm text-muted-foreground">
               {{ endpoint.description }}
             </p>
-          </div>
+          </CardHeader>
 
           <!-- Endpoint Details -->
-          <div class="p-4 space-y-4">
+          <CardContent class="p-4 space-y-4">
             <!-- Parameters -->
             <div v-if="endpoint.parameters && endpoint.parameters.length > 0">
-              <h4 class="text-sm font-semibold text-[var(--theme-text-primary)] mb-2">
+              <h4 class="text-sm font-semibold text-foreground mb-2">
                 Parameters
               </h4>
               <div class="overflow-x-auto">
                 <table class="w-full text-sm">
-                  <thead class="bg-[var(--theme-bg-tertiary)]">
+                  <thead class="bg-muted/50">
                     <tr>
-                      <th class="px-3 py-2 text-left text-[var(--theme-text-secondary)]">Name</th>
-                      <th class="px-3 py-2 text-left text-[var(--theme-text-secondary)]">Type</th>
-                      <th class="px-3 py-2 text-left text-[var(--theme-text-secondary)]">Required</th>
-                      <th class="px-3 py-2 text-left text-[var(--theme-text-secondary)]">Location</th>
-                      <th class="px-3 py-2 text-left text-[var(--theme-text-secondary)]">Description</th>
+                      <th class="px-3 py-2 text-left text-muted-foreground">Name</th>
+                      <th class="px-3 py-2 text-left text-muted-foreground">Type</th>
+                      <th class="px-3 py-2 text-left text-muted-foreground">Required</th>
+                      <th class="px-3 py-2 text-left text-muted-foreground">Location</th>
+                      <th class="px-3 py-2 text-left text-muted-foreground">Description</th>
                     </tr>
                   </thead>
-                  <tbody class="divide-y divide-[var(--theme-border-primary)]">
+                  <tbody class="divide-y divide-border">
                     <tr v-for="param in endpoint.parameters" :key="param.name">
-                      <td class="px-3 py-2 font-mono text-[var(--theme-text-primary)]">{{ param.name }}</td>
-                      <td class="px-3 py-2 font-mono text-[var(--theme-text-secondary)]">{{ param.type }}</td>
+                      <td class="px-3 py-2 font-mono text-foreground">{{ param.name }}</td>
+                      <td class="px-3 py-2 font-mono text-muted-foreground">{{ param.type }}</td>
                       <td class="px-3 py-2">
                         <span
                           class="px-2 py-0.5 rounded text-xs font-medium"
@@ -102,8 +102,8 @@
                           {{ param.required ? 'Required' : 'Optional' }}
                         </span>
                       </td>
-                      <td class="px-3 py-2 text-[var(--theme-text-secondary)]">{{ param.location }}</td>
-                      <td class="px-3 py-2 text-[var(--theme-text-secondary)]">{{ param.description }}</td>
+                      <td class="px-3 py-2 text-muted-foreground">{{ param.location }}</td>
+                      <td class="px-3 py-2 text-muted-foreground">{{ param.description }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -112,22 +112,22 @@
 
             <!-- Request Body -->
             <div v-if="endpoint.requestBody">
-              <h4 class="text-sm font-semibold text-[var(--theme-text-primary)] mb-2">
+              <h4 class="text-sm font-semibold text-foreground mb-2">
                 Request Body
               </h4>
               <div class="space-y-2">
-                <p class="text-xs text-[var(--theme-text-tertiary)]">
+                <p class="text-xs text-muted-foreground">
                   Content-Type: <code>{{ endpoint.requestBody.contentType }}</code>
                 </p>
-                <div class="bg-[var(--theme-bg-tertiary)] p-3 rounded-lg overflow-x-auto">
-                  <pre class="text-xs font-mono text-[var(--theme-text-primary)]">{{ endpoint.requestBody.schema }}</pre>
+                <div class="bg-muted/50 p-3 rounded-lg overflow-x-auto">
+                  <pre class="text-xs font-mono text-foreground">{{ endpoint.requestBody.schema }}</pre>
                 </div>
                 <details class="text-xs">
-                  <summary class="cursor-pointer text-[var(--theme-primary)] hover:underline">
+                  <summary class="cursor-pointer text-primary hover:underline">
                     Show example
                   </summary>
-                  <div class="mt-2 bg-[var(--theme-bg-tertiary)] p-3 rounded-lg overflow-x-auto">
-                    <pre class="text-xs font-mono text-[var(--theme-text-primary)]">{{ endpoint.requestBody.example }}</pre>
+                  <div class="mt-2 bg-muted/50 p-3 rounded-lg overflow-x-auto">
+                    <pre class="text-xs font-mono text-foreground">{{ endpoint.requestBody.example }}</pre>
                   </div>
                 </details>
               </div>
@@ -135,27 +135,27 @@
 
             <!-- Response -->
             <div>
-              <h4 class="text-sm font-semibold text-[var(--theme-text-primary)] mb-2">
+              <h4 class="text-sm font-semibold text-foreground mb-2">
                 Response ({{ endpoint.response.status }})
               </h4>
               <div class="space-y-2">
-                <div class="bg-[var(--theme-bg-tertiary)] p-3 rounded-lg overflow-x-auto">
-                  <pre class="text-xs font-mono text-[var(--theme-text-primary)]">{{ endpoint.response.schema }}</pre>
+                <div class="bg-muted/50 p-3 rounded-lg overflow-x-auto">
+                  <pre class="text-xs font-mono text-foreground">{{ endpoint.response.schema }}</pre>
                 </div>
                 <details class="text-xs">
-                  <summary class="cursor-pointer text-[var(--theme-primary)] hover:underline">
+                  <summary class="cursor-pointer text-primary hover:underline">
                     Show example
                   </summary>
-                  <div class="mt-2 bg-[var(--theme-bg-tertiary)] p-3 rounded-lg overflow-x-auto">
-                    <pre class="text-xs font-mono text-[var(--theme-text-primary)]">{{ endpoint.response.example }}</pre>
+                  <div class="mt-2 bg-muted/50 p-3 rounded-lg overflow-x-auto">
+                    <pre class="text-xs font-mono text-foreground">{{ endpoint.response.example }}</pre>
                   </div>
                 </details>
               </div>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        <div v-if="filteredEndpoints.length === 0" class="text-center py-12 text-[var(--theme-text-tertiary)]">
+        <div v-if="filteredEndpoints.length === 0" class="text-center py-12 text-muted-foreground">
           No endpoints match your search
         </div>
       </div>
@@ -163,58 +163,60 @@
       <!-- WebSocket Messages -->
       <div v-if="activeTab === 'websocket'" class="space-y-6">
         <!-- WebSocket URL -->
-        <div class="bg-[var(--theme-bg-primary)] border border-[var(--theme-border-primary)] rounded-lg p-4">
-          <h3 class="text-lg font-semibold text-[var(--theme-text-primary)] mb-2">
-            WebSocket Endpoint
-          </h3>
-          <code class="text-sm bg-[var(--theme-bg-tertiary)] px-3 py-2 rounded">
-            {{ apiDocumentation.websocket.url }}
-          </code>
-        </div>
+        <Card>
+          <CardContent class="p-4">
+            <h3 class="text-lg font-semibold text-foreground mb-2">
+              WebSocket Endpoint
+            </h3>
+            <code class="text-sm bg-muted/50 px-3 py-2 rounded">
+              {{ apiDocumentation.websocket.url }}
+            </code>
+          </CardContent>
+        </Card>
 
         <!-- Message Types -->
-        <div
+        <Card
           v-for="message in filteredMessages"
           :key="message.type"
-          class="bg-[var(--theme-bg-primary)] border border-[var(--theme-border-primary)] rounded-lg overflow-hidden"
+          class="overflow-hidden"
         >
           <!-- Message Header -->
-          <div class="p-4 border-b border-[var(--theme-border-primary)]">
+          <CardHeader class="pb-3 border-b border-border">
             <div class="flex items-center space-x-3">
               <span class="px-3 py-1 rounded-md text-sm font-bold bg-purple-500/20 text-purple-400">
                 {{ message.type }}
               </span>
             </div>
-            <p class="mt-2 text-sm text-[var(--theme-text-secondary)]">
+            <p class="mt-2 text-sm text-muted-foreground">
               {{ message.description }}
             </p>
-          </div>
+          </CardHeader>
 
           <!-- Message Details -->
-          <div class="p-4 space-y-4">
+          <CardContent class="p-4 space-y-4">
             <!-- Data Shape -->
             <div>
-              <h4 class="text-sm font-semibold text-[var(--theme-text-primary)] mb-2">
+              <h4 class="text-sm font-semibold text-foreground mb-2">
                 Data Shape
               </h4>
-              <div class="bg-[var(--theme-bg-tertiary)] p-3 rounded-lg overflow-x-auto">
-                <pre class="text-xs font-mono text-[var(--theme-text-primary)]">{{ message.dataShape }}</pre>
+              <div class="bg-muted/50 p-3 rounded-lg overflow-x-auto">
+                <pre class="text-xs font-mono text-foreground">{{ message.dataShape }}</pre>
               </div>
             </div>
 
             <!-- Example -->
             <div>
-              <h4 class="text-sm font-semibold text-[var(--theme-text-primary)] mb-2">
+              <h4 class="text-sm font-semibold text-foreground mb-2">
                 Example
               </h4>
-              <div class="bg-[var(--theme-bg-tertiary)] p-3 rounded-lg overflow-x-auto">
-                <pre class="text-xs font-mono text-[var(--theme-text-primary)]">{{ message.example }}</pre>
+              <div class="bg-muted/50 p-3 rounded-lg overflow-x-auto">
+                <pre class="text-xs font-mono text-foreground">{{ message.example }}</pre>
               </div>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        <div v-if="filteredMessages.length === 0" class="text-center py-12 text-[var(--theme-text-tertiary)]">
+        <div v-if="filteredMessages.length === 0" class="text-center py-12 text-muted-foreground">
           No messages match your search
         </div>
       </div>
@@ -225,6 +227,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { apiDocumentation } from '../data/apiDocs';
+import { Card, CardHeader, CardContent } from './ui/card';
 
 const activeTab = ref<'rest' | 'websocket'>('rest');
 const searchQuery = ref('');

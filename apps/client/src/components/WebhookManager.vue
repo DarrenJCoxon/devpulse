@@ -1,130 +1,131 @@
 <template>
-  <div class="h-full overflow-y-auto bg-[var(--theme-bg-secondary)]">
-    <div class="max-w-7xl mx-auto p-6">
+  <div class="h-full overflow-y-auto bg-muted">
+    <div class="max-w-6xl mx-auto w-full px-6 py-6">
       <!-- Header -->
       <div class="flex items-center justify-between mb-6">
         <div>
-          <h1 class="text-3xl font-bold text-[var(--theme-text-primary)] mb-2">
+          <h1 class="text-3xl font-bold text-foreground mb-2">
             Webhook Manager
           </h1>
-          <p class="text-[var(--theme-text-secondary)]">
+          <p class="text-muted-foreground">
             Configure webhooks to forward events to external services
           </p>
         </div>
         <button
           @click="showForm = true"
-          class="px-4 py-2 bg-[var(--theme-primary)] hover:bg-[var(--theme-primary-hover)] text-white rounded-lg transition-colors font-medium"
+          class="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors font-medium"
         >
           Add Webhook
         </button>
       </div>
 
       <!-- Webhooks List -->
-      <div v-if="loading" class="text-center py-12 text-[var(--theme-text-tertiary)]">
+      <div v-if="loading" class="text-center py-12 text-muted-foreground">
         Loading webhooks...
       </div>
 
-      <div v-else-if="webhooks.length === 0" class="text-center py-12 text-[var(--theme-text-tertiary)]">
+      <div v-else-if="webhooks.length === 0" class="text-center py-12 text-muted-foreground">
         <p class="mb-4">No webhooks configured</p>
         <button
           @click="showForm = true"
-          class="px-4 py-2 bg-[var(--theme-primary)] hover:bg-[var(--theme-primary-hover)] text-white rounded-lg transition-colors"
+          class="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors"
         >
           Create your first webhook
         </button>
       </div>
 
       <div v-else class="space-y-4">
-        <div
+        <Card
           v-for="webhook in webhooks"
           :key="webhook.id"
-          class="bg-[var(--theme-bg-primary)] border border-[var(--theme-border-primary)] rounded-lg p-4"
         >
-          <div class="flex items-start justify-between">
-            <!-- Webhook Info -->
-            <div class="flex-1">
-              <div class="flex items-center space-x-3 mb-2">
-                <h3 class="text-lg font-semibold text-[var(--theme-text-primary)]">
-                  {{ webhook.name }}
-                </h3>
-                <span
-                  class="px-2 py-0.5 rounded text-xs font-medium"
-                  :class="webhook.active
-                    ? 'bg-green-500/20 text-green-400'
-                    : 'bg-gray-500/20 text-gray-400'"
-                >
-                  {{ webhook.active ? 'Active' : 'Inactive' }}
-                </span>
-                <span
-                  v-if="webhook.last_status !== null"
-                  class="px-2 py-0.5 rounded text-xs font-medium"
-                  :class="getStatusClass(webhook.last_status)"
-                >
-                  {{ getStatusText(webhook.last_status) }}
-                </span>
-              </div>
-
-              <div class="space-y-1 text-sm">
-                <div class="flex items-center space-x-2">
-                  <span class="text-[var(--theme-text-tertiary)]">URL:</span>
-                  <code class="text-[var(--theme-text-primary)] bg-[var(--theme-bg-tertiary)] px-2 py-0.5 rounded text-xs">
-                    {{ truncateUrl(webhook.url) }}
-                  </code>
-                </div>
-
-                <div class="flex items-center space-x-2">
-                  <span class="text-[var(--theme-text-tertiary)]">Events:</span>
-                  <span class="text-[var(--theme-text-primary)]">
-                    {{ getEventTypesText(webhook.event_types) }}
+          <CardContent class="p-4">
+            <div class="flex items-start justify-between">
+              <!-- Webhook Info -->
+              <div class="flex-1">
+                <div class="flex items-center space-x-3 mb-2">
+                  <h3 class="text-lg font-semibold text-foreground">
+                    {{ webhook.name }}
+                  </h3>
+                  <span
+                    class="px-2 py-0.5 rounded text-xs font-medium"
+                    :class="webhook.active
+                      ? 'bg-green-500/20 text-green-400'
+                      : 'bg-gray-500/20 text-gray-400'"
+                  >
+                    {{ webhook.active ? 'Active' : 'Inactive' }}
+                  </span>
+                  <span
+                    v-if="webhook.last_status !== null"
+                    class="px-2 py-0.5 rounded text-xs font-medium"
+                    :class="getStatusClass(webhook.last_status)"
+                  >
+                    {{ getStatusText(webhook.last_status) }}
                   </span>
                 </div>
 
-                <div v-if="webhook.project_filter" class="flex items-center space-x-2">
-                  <span class="text-[var(--theme-text-tertiary)]">Project:</span>
-                  <span class="text-[var(--theme-text-primary)]">{{ webhook.project_filter }}</span>
-                </div>
+                <div class="space-y-1 text-sm">
+                  <div class="flex items-center space-x-2">
+                    <span class="text-muted-foreground">URL:</span>
+                    <code class="text-foreground bg-muted/50 px-2 py-0.5 rounded text-xs">
+                      {{ truncateUrl(webhook.url) }}
+                    </code>
+                  </div>
 
-                <div class="flex items-center space-x-4 text-xs text-[var(--theme-text-tertiary)]">
-                  <span>Triggers: {{ webhook.trigger_count }}</span>
-                  <span>Failures: {{ webhook.failure_count }}</span>
-                  <span v-if="webhook.last_triggered_at">
-                    Last: {{ formatTimestamp(webhook.last_triggered_at) }}
-                  </span>
-                </div>
+                  <div class="flex items-center space-x-2">
+                    <span class="text-muted-foreground">Events:</span>
+                    <span class="text-foreground">
+                      {{ getEventTypesText(webhook.event_types) }}
+                    </span>
+                  </div>
 
-                <div v-if="webhook.last_error" class="text-xs text-red-400 mt-1">
-                  Error: {{ webhook.last_error }}
+                  <div v-if="webhook.project_filter" class="flex items-center space-x-2">
+                    <span class="text-muted-foreground">Project:</span>
+                    <span class="text-foreground">{{ webhook.project_filter }}</span>
+                  </div>
+
+                  <div class="flex items-center space-x-4 text-xs text-muted-foreground">
+                    <span>Triggers: {{ webhook.trigger_count }}</span>
+                    <span>Failures: {{ webhook.failure_count }}</span>
+                    <span v-if="webhook.last_triggered_at">
+                      Last: {{ formatTimestamp(webhook.last_triggered_at) }}
+                    </span>
+                  </div>
+
+                  <div v-if="webhook.last_error" class="text-xs text-red-400 mt-1">
+                    Error: {{ webhook.last_error }}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <!-- Actions -->
-            <div class="flex items-center space-x-2">
-              <button
-                @click="testWebhook(webhook)"
-                :disabled="testingId === webhook.id"
-                class="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded transition-colors text-sm disabled:opacity-50"
-                title="Test webhook"
-              >
-                {{ testingId === webhook.id ? 'Testing...' : 'Test' }}
-              </button>
-              <button
-                @click="editWebhook(webhook)"
-                class="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded transition-colors text-sm"
-                title="Edit webhook"
-              >
-                Edit
-              </button>
-              <button
-                @click="confirmDelete(webhook)"
-                class="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded transition-colors text-sm"
-                title="Delete webhook"
-              >
-                Delete
-              </button>
+              <!-- Actions -->
+              <div class="flex items-center space-x-2">
+                <button
+                  @click="testWebhook(webhook)"
+                  :disabled="testingId === webhook.id"
+                  class="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded transition-colors text-sm disabled:opacity-50"
+                  title="Test webhook"
+                >
+                  {{ testingId === webhook.id ? 'Testing...' : 'Test' }}
+                </button>
+                <button
+                  @click="editWebhook(webhook)"
+                  class="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded transition-colors text-sm"
+                  title="Edit webhook"
+                >
+                  Edit
+                </button>
+                <button
+                  @click="confirmDelete(webhook)"
+                  class="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded transition-colors text-sm"
+                  title="Delete webhook"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
 
@@ -134,25 +135,25 @@
       class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       @click.self="closeForm"
     >
-      <div class="bg-[var(--theme-bg-primary)] rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-[var(--theme-border-primary)]">
+      <div class="bg-card rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-border">
         <!-- Form Header -->
-        <div class="flex items-center justify-between p-4 border-b border-[var(--theme-border-primary)]">
-          <h2 class="text-xl font-bold text-[var(--theme-text-primary)]">
+        <div class="flex items-center justify-between p-4 border-b border-border">
+          <h2 class="text-xl font-bold text-foreground">
             {{ editingWebhook ? 'Edit Webhook' : 'Add Webhook' }}
           </h2>
           <button
             @click="closeForm"
-            class="p-2 rounded-lg hover:bg-[var(--theme-hover-bg)] transition-colors"
+            class="p-2 rounded-lg hover:bg-muted transition-colors"
             title="Close"
           >
-            <span class="text-2xl">✕</span>
+            <span class="text-2xl">&#x2715;</span>
           </button>
         </div>
 
         <!-- Form Body -->
         <form @submit.prevent="saveWebhook" class="p-4 space-y-4">
           <div>
-            <label class="block text-sm font-medium text-[var(--theme-text-primary)] mb-1">
+            <label class="block text-sm font-medium text-foreground mb-1">
               Name <span class="text-red-400">*</span>
             </label>
             <input
@@ -160,12 +161,12 @@
               type="text"
               required
               placeholder="e.g., Slack Notifications"
-              class="w-full px-3 py-2 bg-[var(--theme-bg-secondary)] border border-[var(--theme-border-primary)] rounded-lg text-[var(--theme-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--theme-primary)]"
+              class="w-full px-3 py-2 bg-muted border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-[var(--theme-text-primary)] mb-1">
+            <label class="block text-sm font-medium text-foreground mb-1">
               URL <span class="text-red-400">*</span>
             </label>
             <input
@@ -173,30 +174,30 @@
               type="url"
               required
               placeholder="https://hooks.example.com/..."
-              class="w-full px-3 py-2 bg-[var(--theme-bg-secondary)] border border-[var(--theme-border-primary)] rounded-lg text-[var(--theme-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--theme-primary)]"
+              class="w-full px-3 py-2 bg-muted border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-[var(--theme-text-primary)] mb-1">
+            <label class="block text-sm font-medium text-foreground mb-1">
               Secret (optional)
             </label>
             <input
               v-model="form.secret"
               type="password"
               placeholder="HMAC signing secret"
-              class="w-full px-3 py-2 bg-[var(--theme-bg-secondary)] border border-[var(--theme-border-primary)] rounded-lg text-[var(--theme-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--theme-primary)]"
+              class="w-full px-3 py-2 bg-muted border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             />
-            <p class="text-xs text-[var(--theme-text-tertiary)] mt-1">
+            <p class="text-xs text-muted-foreground mt-1">
               Used for X-DevPulse-Signature header
             </p>
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-[var(--theme-text-primary)] mb-1">
+            <label class="block text-sm font-medium text-foreground mb-1">
               Event Types
             </label>
-            <div class="max-h-48 overflow-y-auto bg-[var(--theme-bg-secondary)] border border-[var(--theme-border-primary)] rounded-lg p-3 space-y-2">
+            <div class="max-h-48 overflow-y-auto bg-muted border border-border rounded-lg p-3 space-y-2">
               <label class="flex items-center space-x-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -204,9 +205,9 @@
                   @change="toggleAllEventTypes"
                   class="rounded"
                 />
-                <span class="text-sm text-[var(--theme-text-primary)] font-medium">All Events</span>
+                <span class="text-sm text-foreground font-medium">All Events</span>
               </label>
-              <hr class="border-[var(--theme-border-primary)]" />
+              <hr class="border-border" />
               <label
                 v-for="eventType in commonEventTypes"
                 :key="eventType"
@@ -218,23 +219,23 @@
                   v-model="form.eventTypes"
                   class="rounded"
                 />
-                <span class="text-sm text-[var(--theme-text-primary)]">{{ eventType }}</span>
+                <span class="text-sm text-foreground">{{ eventType }}</span>
               </label>
             </div>
-            <p class="text-xs text-[var(--theme-text-tertiary)] mt-1">
+            <p class="text-xs text-muted-foreground mt-1">
               Leave empty to receive all event types
             </p>
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-[var(--theme-text-primary)] mb-1">
+            <label class="block text-sm font-medium text-foreground mb-1">
               Project Filter (optional)
             </label>
             <input
               v-model="form.projectFilter"
               type="text"
               placeholder="Leave empty for all projects"
-              class="w-full px-3 py-2 bg-[var(--theme-bg-secondary)] border border-[var(--theme-border-primary)] rounded-lg text-[var(--theme-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--theme-primary)]"
+              class="w-full px-3 py-2 bg-muted border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
@@ -245,23 +246,23 @@
               id="active"
               class="rounded"
             />
-            <label for="active" class="text-sm text-[var(--theme-text-primary)] cursor-pointer">
+            <label for="active" class="text-sm text-foreground cursor-pointer">
               Active
             </label>
           </div>
 
-          <div class="flex items-center justify-end space-x-3 pt-4 border-t border-[var(--theme-border-primary)]">
+          <div class="flex items-center justify-end space-x-3 pt-4 border-t border-border">
             <button
               type="button"
               @click="closeForm"
-              class="px-4 py-2 bg-[var(--theme-bg-secondary)] hover:bg-[var(--theme-hover-bg)] text-[var(--theme-text-primary)] rounded-lg transition-colors"
+              class="px-4 py-2 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               :disabled="saving"
-              class="px-4 py-2 bg-[var(--theme-primary)] hover:bg-[var(--theme-primary-hover)] text-white rounded-lg transition-colors disabled:opacity-50"
+              class="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors disabled:opacity-50"
             >
               {{ saving ? 'Saving...' : (editingWebhook ? 'Update' : 'Create') }}
             </button>
@@ -276,18 +277,18 @@
       class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       @click.self="deleteConfirm = null"
     >
-      <div class="bg-[var(--theme-bg-primary)] rounded-lg shadow-2xl max-w-md w-full border border-[var(--theme-border-primary)]">
+      <div class="bg-card rounded-lg shadow-2xl max-w-md w-full border border-border">
         <div class="p-6">
-          <h3 class="text-xl font-bold text-[var(--theme-text-primary)] mb-2">
+          <h3 class="text-xl font-bold text-foreground mb-2">
             Delete Webhook
           </h3>
-          <p class="text-[var(--theme-text-secondary)] mb-4">
+          <p class="text-muted-foreground mb-4">
             Are you sure you want to delete "{{ deleteConfirm.name }}"? This action cannot be undone.
           </p>
           <div class="flex items-center justify-end space-x-3">
             <button
               @click="deleteConfirm = null"
-              class="px-4 py-2 bg-[var(--theme-bg-secondary)] hover:bg-[var(--theme-hover-bg)] text-[var(--theme-text-primary)] rounded-lg transition-colors"
+              class="px-4 py-2 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-colors"
             >
               Cancel
             </button>
@@ -307,6 +308,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { API_BASE_URL } from '../config';
+import { Card, CardContent } from './ui/card';
 
 interface Webhook {
   id: string;

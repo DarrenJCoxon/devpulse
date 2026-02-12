@@ -1,17 +1,17 @@
 <template>
-  <div class="h-full flex flex-col bg-[var(--theme-bg-secondary)]">
+  <div class="h-full flex flex-col bg-muted">
     <!-- Controls -->
-    <div class="px-4 py-3 bg-[var(--theme-bg-primary)] border-b border-[var(--theme-border-primary)]">
+    <div class="px-4 py-3 bg-background border-b border-border">
       <div class="flex items-center justify-between gap-4">
         <div class="flex items-center gap-2">
           <span class="text-lg">🌳</span>
-          <h2 class="text-base font-semibold text-[var(--theme-text-primary)]">Agent Team Topology</h2>
+          <h2 class="text-base font-semibold text-foreground">Agent Team Topology</h2>
         </div>
 
         <!-- Project filter -->
         <select
           v-model="selectedProject"
-          class="px-3 py-1.5 text-sm rounded-lg border border-[var(--theme-border-primary)] bg-[var(--theme-bg-secondary)] text-[var(--theme-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--theme-primary)]"
+          class="px-3 py-1.5 text-sm rounded-lg border border-border bg-muted text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
         >
           <option value="">All Projects</option>
           <option v-for="project in projectNames" :key="project" :value="project">
@@ -24,7 +24,7 @@
     <!-- Topology Tree -->
     <div class="flex-1 overflow-auto p-6">
       <!-- Empty state -->
-      <div v-if="filteredTopology.length === 0" class="flex flex-col items-center justify-center h-full text-[var(--theme-text-tertiary)]">
+      <div v-if="filteredTopology.length === 0" class="flex flex-col items-center justify-center h-full text-muted-foreground">
         <span class="text-4xl mb-3">🤖</span>
         <p class="text-lg font-medium">No agent teams detected</p>
         <p class="text-sm mt-1">Multi-agent teams will appear here when subagents are spawned</p>
@@ -38,7 +38,7 @@
             :level="0"
             @click="selectAgent(root)"
           />
-          <div v-if="root.children.length > 0" class="ml-8 mt-4 space-y-4 border-l-2 border-[var(--theme-border-secondary)] pl-4">
+          <div v-if="root.children.length > 0" class="ml-8 mt-4 space-y-4 border-l-2 border-border pl-4">
             <AgentNodeCard
               v-for="childId in root.children"
               :key="childId"

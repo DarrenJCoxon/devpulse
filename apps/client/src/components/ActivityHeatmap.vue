@@ -1,73 +1,76 @@
 <template>
-  <div class="bg-[var(--theme-bg-primary)] rounded-xl border border-[var(--theme-border-primary)] p-4">
-    <!-- Header with filter -->
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="text-lg font-bold text-[var(--theme-text-primary)]">
-        <span class="mr-2">📅</span>
-        Activity Heatmap
-      </h3>
+  <Card>
+    <CardContent class="p-4">
+      <!-- Header with filter -->
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-bold text-foreground">
+          <span class="mr-2">📅</span>
+          Activity Heatmap
+        </h3>
 
-      <!-- Project filter dropdown -->
-      <div class="flex items-center gap-2">
-        <label class="text-sm text-[var(--theme-text-tertiary)] font-medium">Project:</label>
-        <select
-          v-model="selectedProject"
-          @change="fetchHeatmapData"
-          class="px-3 py-1.5 text-sm rounded-lg bg-[var(--theme-bg-tertiary)] text-[var(--theme-text-primary)] border border-[var(--theme-border-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--theme-primary)]"
+        <!-- Project filter dropdown -->
+        <div class="flex items-center gap-2">
+          <label class="text-sm text-muted-foreground font-medium">Project:</label>
+          <select
+            v-model="selectedProject"
+            @change="fetchHeatmapData"
+            class="px-3 py-1.5 text-sm rounded-lg bg-muted/50 text-foreground border border-border focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="all">All Projects</option>
+            <option v-for="project in projects" :key="project.name" :value="project.name">
+              {{ project.name }}
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Canvas container -->
+      <div ref="chartContainer" class="relative">
+        <canvas
+          ref="canvas"
+          class="w-full cursor-crosshair"
+          :style="{ height: canvasHeight + 'px' }"
+          @mousemove="handleMouseMove"
+          @mouseleave="handleMouseLeave"
+          role="img"
+          :aria-label="chartAriaLabel"
+        ></canvas>
+
+        <!-- Tooltip -->
+        <div
+          v-if="tooltip.visible"
+          class="absolute bg-primary text-white rounded-lg px-3 py-2 text-xs font-bold shadow-lg pointer-events-none z-10"
+          :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }"
         >
-          <option value="all">All Projects</option>
-          <option v-for="project in projects" :key="project.name" :value="project.name">
-            {{ project.name }}
-          </option>
-        </select>
-      </div>
-    </div>
+          {{ tooltip.text }}
+        </div>
 
-    <!-- Canvas container -->
-    <div ref="chartContainer" class="relative">
-      <canvas
-        ref="canvas"
-        class="w-full cursor-crosshair"
-        :style="{ height: canvasHeight + 'px' }"
-        @mousemove="handleMouseMove"
-        @mouseleave="handleMouseLeave"
-        role="img"
-        :aria-label="chartAriaLabel"
-      ></canvas>
-
-      <!-- Tooltip -->
-      <div
-        v-if="tooltip.visible"
-        class="absolute bg-[var(--theme-primary)] text-white rounded-lg px-3 py-2 text-xs font-bold shadow-lg pointer-events-none z-10"
-        :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }"
-      >
-        {{ tooltip.text }}
+        <!-- Empty state -->
+        <div
+          v-if="!hasData"
+          class="absolute inset-0 flex items-center justify-center"
+        >
+          <p class="text-muted-foreground text-base font-semibold">
+            <span class="mr-1.5 text-base">📊</span>
+            No activity data in this date range
+          </p>
+        </div>
       </div>
 
-      <!-- Empty state -->
-      <div
-        v-if="!hasData"
-        class="absolute inset-0 flex items-center justify-center"
-      >
-        <p class="text-[var(--theme-text-tertiary)] text-base font-semibold">
-          <span class="mr-1.5 text-base">📊</span>
-          No activity data in this date range
-        </p>
+      <!-- Legend -->
+      <div class="mt-4 flex items-center justify-center gap-3">
+        <span class="text-xs text-muted-foreground font-medium">Less</span>
+        <canvas ref="legendCanvas" width="200" height="20" class="rounded"></canvas>
+        <span class="text-xs text-muted-foreground font-medium">More</span>
       </div>
-    </div>
-
-    <!-- Legend -->
-    <div class="mt-4 flex items-center justify-center gap-3">
-      <span class="text-xs text-[var(--theme-text-tertiary)] font-medium">Less</span>
-      <canvas ref="legendCanvas" width="200" height="20" class="rounded"></canvas>
-      <span class="text-xs text-[var(--theme-text-tertiary)] font-medium">More</span>
-    </div>
-  </div>
+    </CardContent>
+  </Card>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import type { Project } from '../types';
+import { Card, CardContent } from './ui/card';
 
 interface HeatmapCell {
   day: string;
@@ -108,18 +111,25 @@ const chartAriaLabel = computed(() => {
   return `Activity heatmap showing development activity across days and hours for ${projectText}`;
 });
 
-// Parse theme primary color to RGB
+// Use HSL primary color from shadcn theme
 const getThemePrimaryRGB = (): { r: number; g: number; b: number } => {
   const style = getComputedStyle(document.documentElement);
-  const primary = style.getPropertyValue('--theme-primary').trim();
+  const primaryHSL = style.getPropertyValue('--primary').trim();
 
-  // Handle hex color
-  if (primary.startsWith('#')) {
-    const hex = primary.slice(1);
-    const r = parseInt(hex.slice(0, 2), 16);
-    const g = parseInt(hex.slice(2, 4), 16);
-    const b = parseInt(hex.slice(4, 6), 16);
-    return { r, g, b };
+  // shadcn uses HSL values like "222.2 47.4% 11.2%"
+  if (primaryHSL) {
+    // Create a temporary element to resolve the HSL to RGB
+    const temp = document.createElement('div');
+    temp.style.color = `hsl(${primaryHSL})`;
+    document.body.appendChild(temp);
+    const computed = getComputedStyle(temp).color;
+    document.body.removeChild(temp);
+
+    // Parse rgb(r, g, b) string
+    const match = computed.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+    if (match) {
+      return { r: parseInt(match[1]), g: parseInt(match[2]), b: parseInt(match[3]) };
+    }
   }
 
   // Fallback to blue
@@ -164,6 +174,16 @@ const getWeekdayAbbr = (dateStr: string): string => {
   return days[date.getDay()];
 };
 
+// Get theme color for text/borders using CSS custom properties
+const getThemeColor = (varName: string, fallback: string): string => {
+  const style = getComputedStyle(document.documentElement);
+  const value = style.getPropertyValue(varName).trim();
+  if (value) {
+    return `hsl(${value})`;
+  }
+  return fallback;
+};
+
 // Render the heatmap
 const render = () => {
   if (!canvas.value || !chartContainer.value) return;
@@ -205,7 +225,7 @@ const render = () => {
   const primaryRGB = getThemePrimaryRGB();
 
   // Draw hour labels (Y-axis) - only show 12am, 6am, 12pm, 6pm
-  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--theme-text-tertiary').trim();
+  ctx.fillStyle = getThemeColor('--muted-foreground', '#6b7280');
   ctx.font = '11px system-ui, -apple-system, sans-serif';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
@@ -250,7 +270,7 @@ const render = () => {
       ctx.fillRect(x + 1, y + 1, cellWidth - 2, cellHeight - 2);
 
       // Draw cell border
-      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--theme-border-primary').trim();
+      ctx.strokeStyle = getThemeColor('--border', '#e5e7eb');
       ctx.lineWidth = 0.5;
       ctx.strokeRect(x + 1, y + 1, cellWidth - 2, cellHeight - 2);
     }
@@ -283,7 +303,7 @@ const renderLegend = () => {
   ctx.fillRect(0, 0, width, height);
 
   // Draw border
-  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--theme-border-primary').trim();
+  ctx.strokeStyle = getThemeColor('--border', '#e5e7eb');
   ctx.lineWidth = 1;
   ctx.strokeRect(0, 0, width, height);
 };

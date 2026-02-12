@@ -1,11 +1,11 @@
 <template>
   <div class="flex flex-col h-full">
     <!-- Header with Add Project button -->
-    <div class="px-4 py-3 border-b border-[var(--theme-border-secondary)] flex items-center justify-between">
-      <h2 class="text-lg font-semibold text-[var(--theme-text-primary)]">Projects</h2>
+    <div class="px-4 py-3 border-b border-border flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-foreground">Projects</h2>
       <button
         @click="emit('add-project')"
-        class="px-4 py-2 rounded-lg bg-[var(--theme-primary)] text-white hover:bg-[var(--theme-primary-dark)] transition-colors text-sm font-medium flex items-center gap-2"
+        class="px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors text-sm font-medium flex items-center gap-2"
       >
         <span class="text-lg">+</span>
         <span>Add Project</span>
@@ -16,24 +16,23 @@
     <div class="flex-1 overflow-y-auto">
       <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
         <!-- No projects state -->
-        <div v-if="projects.length === 0" class="col-span-full flex flex-col items-center justify-center py-16 text-[var(--theme-text-tertiary)]">
+        <div v-if="projects.length === 0" class="col-span-full flex flex-col items-center justify-center py-16 text-muted-foreground">
           <span class="text-4xl mb-3">📡</span>
           <p class="text-lg font-medium">No projects detected yet</p>
           <p class="text-sm mt-1">Click "Add Project" to install DevPulse hooks on a project</p>
         </div>
 
     <!-- Project cards -->
-    <div
+    <Card
       v-for="project in projects"
       :key="project.name"
-      class="bg-[var(--theme-bg-primary)] rounded-xl border border-[var(--theme-border-primary)] shadow-sm hover:shadow-md transition-shadow transition-opacity duration-300 overflow-hidden"
-      :class="{ 'opacity-75': project.active_sessions === 0 }"
+      :class="['hover:shadow-md transition-shadow transition-opacity duration-300 overflow-hidden', project.active_sessions === 0 ? 'opacity-75' : '']"
     >
       <!-- Card header -->
-      <div class="px-4 py-3 border-b border-[var(--theme-border-secondary)] flex items-center justify-between">
+      <CardHeader class="px-4 py-3 border-b border-border flex flex-row items-center justify-between space-y-0">
         <div class="flex items-center gap-2">
           <span class="text-lg">📁</span>
-          <h3 class="text-base font-semibold text-[var(--theme-text-primary)]">{{ project.name }}</h3>
+          <CardTitle class="text-base font-semibold">{{ project.name }}</CardTitle>
         </div>
         <div class="flex items-center gap-3">
           <!-- Health Ring (E5-S4) -->
@@ -55,30 +54,30 @@
               class="md:hidden"
             />
             <!-- Tooltip on hover -->
-            <div class="absolute hidden group-hover:block z-10 w-56 p-3 rounded-lg shadow-lg bg-[var(--theme-bg-secondary)] border border-[var(--theme-border-primary)] left-1/2 -translate-x-1/2 bottom-full mb-2 pointer-events-none">
+            <div class="absolute hidden group-hover:block z-10 w-56 p-3 rounded-lg shadow-lg bg-muted border border-border left-1/2 -translate-x-1/2 bottom-full mb-2 pointer-events-none">
               <div class="text-xs space-y-1.5">
-                <div class="font-semibold text-[var(--theme-text-primary)] pb-1 border-b border-[var(--theme-border-secondary)]">
+                <div class="font-semibold text-foreground pb-1 border-b border-border">
                   Health Score Breakdown
                 </div>
-                <div class="flex justify-between text-[var(--theme-text-secondary)]">
+                <div class="flex justify-between text-muted-foreground">
                   <span>Test Status (40%):</span>
                   <span class="font-medium">{{ project.health.testScore }}</span>
                 </div>
-                <div class="flex justify-between text-[var(--theme-text-secondary)]">
+                <div class="flex justify-between text-muted-foreground">
                   <span>Activity (30%):</span>
                   <span class="font-medium">{{ project.health.activityScore }}</span>
                 </div>
-                <div class="flex justify-between text-[var(--theme-text-secondary)]">
+                <div class="flex justify-between text-muted-foreground">
                   <span>Error Rate (30%):</span>
                   <span class="font-medium">{{ project.health.errorRateScore }}</span>
                 </div>
-                <div class="flex justify-between text-[var(--theme-text-primary)] font-semibold pt-1 border-t border-[var(--theme-border-secondary)]">
+                <div class="flex justify-between text-foreground font-semibold pt-1 border-t border-border">
                   <span>Overall:</span>
                   <span>{{ project.health.score }}</span>
                 </div>
               </div>
               <!-- Tooltip arrow -->
-              <div class="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-[var(--theme-border-primary)]"></div>
+              <div class="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-border"></div>
             </div>
           </div>
 
@@ -94,18 +93,18 @@
             </span>
             {{ project.active_sessions }} active
           </span>
-          <span v-else class="text-xs text-[var(--theme-text-quaternary)] px-2 py-0.5 rounded-full bg-[var(--theme-bg-tertiary)]">
+          <span v-else class="text-xs text-muted-foreground px-2 py-0.5 rounded-full bg-muted/50">
             idle
           </span>
         </div>
-      </div>
+      </CardHeader>
 
       <!-- Card body -->
-      <div class="px-4 py-3 space-y-3">
+      <CardContent class="px-4 py-3 space-y-3">
         <!-- Branch -->
         <div class="flex items-center gap-2 text-sm">
-          <span class="text-[var(--theme-text-tertiary)]">🌿</span>
-          <code class="text-xs font-mono bg-[var(--theme-bg-tertiary)] px-2 py-0.5 rounded text-[var(--theme-text-secondary)]">
+          <span class="text-muted-foreground">🌿</span>
+          <code class="text-xs font-mono bg-muted/50 px-2 py-0.5 rounded text-muted-foreground">
             {{ project.current_branch || 'main' }}
           </code>
         </div>
@@ -151,21 +150,21 @@
               :class="deploymentDotClass(parsedDeployment(project)!.state)"
             ></span>
             <span>{{ deploymentStateText(parsedDeployment(project)!.state) }}</span>
-            <span class="text-[var(--theme-text-quaternary)]">{{ deploymentTimeAgo(parsedDeployment(project)!.created) }}</span>
+            <span class="text-muted-foreground">{{ deploymentTimeAgo(parsedDeployment(project)!.created) }}</span>
           </a>
         </div>
-        <div v-if="parsedDeployment(project) && parsedDeployment(project)!.commit_message" class="text-xs text-[var(--theme-text-tertiary)] pl-6 -mt-1">
+        <div v-if="parsedDeployment(project) && parsedDeployment(project)!.commit_message" class="text-xs text-muted-foreground pl-6 -mt-1">
           {{ parsedDeployment(project)!.commit_message }}
         </div>
 
         <!-- Sessions list -->
         <div v-if="projectSessions(project.name).length > 0" class="mt-2">
-          <div class="text-xs text-[var(--theme-text-tertiary)] mb-1.5 font-medium uppercase tracking-wide">Sessions</div>
+          <div class="text-xs text-muted-foreground mb-1.5 font-medium uppercase tracking-wide">Sessions</div>
           <div class="space-y-1">
             <div
               v-for="session in projectSessions(project.name)"
               :key="session.session_id"
-              class="bg-[var(--theme-bg-tertiary)] rounded px-2 py-1.5 transition-opacity duration-300 space-y-1"
+              class="bg-muted/50 rounded px-2 py-1.5 transition-opacity duration-300 space-y-1"
               :class="{
                 'opacity-50': session.status === 'idle' || session.status === 'stopped',
                 'ring-2 ring-red-400 ring-opacity-50': getCompactionHealth(session) === 'red'
@@ -182,7 +181,7 @@
                       'bg-red-400': session.status === 'stopped'
                     }"
                   ></span>
-                  <span class="font-mono text-[var(--theme-text-secondary)]">
+                  <span class="font-mono text-muted-foreground">
                     {{ session.session_id.slice(0, 8) }}
                   </span>
                   <!-- Context health indicator (E4-S3) -->
@@ -198,10 +197,10 @@
                   ></span>
                 </div>
                 <div class="flex items-center gap-2">
-                  <span class="text-[var(--theme-text-quaternary)]">
+                  <span class="text-muted-foreground">
                     {{ session.model_name ? session.model_name.split('-').slice(0, 2).join('-') : '' }}
                   </span>
-                  <span class="text-[var(--theme-text-quaternary)]">
+                  <span class="text-muted-foreground">
                     {{ timeAgo(session.last_event_at) }}
                   </span>
                 </div>
@@ -220,8 +219,8 @@
         </div>
 
         <!-- Last activity and export -->
-        <div class="flex items-center justify-between pt-1 border-t border-[var(--theme-border-secondary)]">
-          <div class="text-xs text-[var(--theme-text-quaternary)]">
+        <div class="flex items-center justify-between pt-1 border-t border-border">
+          <div class="text-xs text-muted-foreground">
             Last activity: {{ timeAgo(project.last_activity) }}
           </div>
           <ExportDropdown
@@ -230,8 +229,8 @@
             button-title="Export logs for this project"
           />
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
       </div>
     </div>
   </div>
@@ -241,6 +240,7 @@
 import type { Project, Session } from '../types';
 import HealthRing from './HealthRing.vue';
 import ExportDropdown from './ExportDropdown.vue';
+import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 
 const props = defineProps<{
   projects: Project[];
@@ -275,7 +275,7 @@ function testClass(status: string): string {
   switch (status) {
     case 'passing': return 'text-green-600';
     case 'failing': return 'text-red-600';
-    default: return 'text-[var(--theme-text-tertiary)]';
+    default: return 'text-muted-foreground';
   }
 }
 

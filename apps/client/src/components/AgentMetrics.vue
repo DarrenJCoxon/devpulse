@@ -2,17 +2,17 @@
   <div class="p-6 space-y-6">
     <!-- Header and Controls -->
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-      <h2 class="text-2xl font-bold text-[var(--theme-text-primary)]">Agent Performance Metrics</h2>
+      <h2 class="text-2xl font-bold text-foreground">Agent Performance Metrics</h2>
 
       <div class="flex items-center gap-3">
         <!-- View Toggle -->
-        <div class="bg-[var(--theme-bg-tertiary)] rounded-lg p-1 flex gap-1">
+        <div class="bg-muted/50 rounded-lg p-1 flex gap-1">
           <button
             @click="viewMode = 'project'"
             class="px-4 py-2 rounded transition-colors text-sm font-medium"
             :class="viewMode === 'project'
-              ? 'bg-[var(--theme-primary)] text-white'
-              : 'text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-primary)]'"
+              ? 'bg-primary text-white'
+              : 'text-muted-foreground hover:text-foreground'"
           >
             By Project
           </button>
@@ -20,8 +20,8 @@
             @click="viewMode = 'session'"
             class="px-4 py-2 rounded transition-colors text-sm font-medium"
             :class="viewMode === 'session'
-              ? 'bg-[var(--theme-primary)] text-white'
-              : 'text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-primary)]'"
+              ? 'bg-primary text-white'
+              : 'text-muted-foreground hover:text-foreground'"
           >
             By Session
           </button>
@@ -31,7 +31,7 @@
         <button
           @click="loadMetrics"
           :disabled="loading"
-          class="px-4 py-2 bg-[var(--theme-primary)] text-white rounded-lg hover:bg-[var(--theme-primary-hover)] transition-colors disabled:opacity-50"
+          class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
           {{ loading ? 'Loading...' : 'Refresh' }}
         </button>
@@ -42,10 +42,10 @@
     <div class="flex flex-col sm:flex-row gap-4">
       <!-- Project Filter (for session view) -->
       <div v-if="viewMode === 'session'" class="flex items-center gap-3">
-        <label class="text-sm font-medium text-[var(--theme-text-secondary)]">Project:</label>
+        <label class="text-sm font-medium text-muted-foreground">Project:</label>
         <select
           v-model="selectedProject"
-          class="px-3 py-2 bg-[var(--theme-bg-tertiary)] border border-[var(--theme-border-primary)] rounded-lg text-[var(--theme-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--theme-primary)]"
+          class="px-3 py-2 bg-muted/50 border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
         >
           <option value="">Select a project</option>
           <option v-for="project in availableProjects" :key="project" :value="project">
@@ -56,22 +56,22 @@
 
       <!-- Date Range Filter -->
       <div class="flex items-center gap-3">
-        <label class="text-sm font-medium text-[var(--theme-text-secondary)]">From:</label>
+        <label class="text-sm font-medium text-muted-foreground">From:</label>
         <input
           type="date"
           v-model="startDate"
-          class="px-3 py-2 bg-[var(--theme-bg-tertiary)] border border-[var(--theme-border-primary)] rounded-lg text-[var(--theme-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--theme-primary)]"
+          class="px-3 py-2 bg-muted/50 border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
         />
-        <label class="text-sm font-medium text-[var(--theme-text-secondary)]">To:</label>
+        <label class="text-sm font-medium text-muted-foreground">To:</label>
         <input
           type="date"
           v-model="endDate"
-          class="px-3 py-2 bg-[var(--theme-bg-tertiary)] border border-[var(--theme-border-primary)] rounded-lg text-[var(--theme-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--theme-primary)]"
+          class="px-3 py-2 bg-muted/50 border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
         />
         <button
           v-if="startDate || endDate"
           @click="clearDateFilter"
-          class="px-3 py-2 text-sm text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-primary)] transition-colors"
+          class="px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           Clear
         </button>
@@ -85,131 +85,135 @@
 
     <!-- Project View -->
     <div v-if="viewMode === 'project' && !loading">
-      <div v-if="projectMetrics.length === 0" class="text-center py-12 text-[var(--theme-text-secondary)]">
+      <div v-if="projectMetrics.length === 0" class="text-center py-12 text-muted-foreground">
         No project metrics available
       </div>
 
-      <div v-else class="bg-[var(--theme-bg-primary)] rounded-lg border border-[var(--theme-border-primary)] overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full">
-            <thead class="bg-[var(--theme-bg-tertiary)] border-b border-[var(--theme-border-primary)]">
-              <tr>
-                <th class="px-4 py-3 text-left text-sm font-semibold text-[var(--theme-text-primary)]">Project</th>
-                <th class="px-4 py-3 text-left text-sm font-semibold text-[var(--theme-text-primary)]">Sessions</th>
-                <th class="px-4 py-3 text-left text-sm font-semibold text-[var(--theme-text-primary)]">Tool Success Rate</th>
-                <th class="px-4 py-3 text-left text-sm font-semibold text-[var(--theme-text-primary)]">Avg Turn Time</th>
-                <th class="px-4 py-3 text-left text-sm font-semibold text-[var(--theme-text-primary)]">Total Events</th>
-                <th class="px-4 py-3 text-left text-sm font-semibold text-[var(--theme-text-primary)]">Duration</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="project in projectMetrics"
-                :key="project.project_name"
-                class="border-b border-[var(--theme-border-secondary)] hover:bg-[var(--theme-hover-bg)]"
-              >
-                <td class="px-4 py-3 text-sm font-medium text-[var(--theme-text-primary)]">{{ project.project_name }}</td>
-                <td class="px-4 py-3 text-sm text-[var(--theme-text-secondary)]">{{ project.session_count }}</td>
-                <td class="px-4 py-3">
-                  <div class="flex items-center gap-2">
-                    <div class="flex-1 max-w-[200px] h-6 bg-[var(--theme-bg-tertiary)] rounded-full overflow-hidden">
-                      <div
-                        class="h-full bg-green-500 transition-all"
-                        :style="{ width: `${project.avg_tool_success_rate}%` }"
-                      ></div>
+      <Card v-else>
+        <CardContent class="p-0">
+          <div class="overflow-x-auto">
+            <table class="w-full">
+              <thead class="bg-muted/50 border-b border-border">
+                <tr>
+                  <th class="px-4 py-3 text-left text-sm font-semibold text-foreground">Project</th>
+                  <th class="px-4 py-3 text-left text-sm font-semibold text-foreground">Sessions</th>
+                  <th class="px-4 py-3 text-left text-sm font-semibold text-foreground">Tool Success Rate</th>
+                  <th class="px-4 py-3 text-left text-sm font-semibold text-foreground">Avg Turn Time</th>
+                  <th class="px-4 py-3 text-left text-sm font-semibold text-foreground">Total Events</th>
+                  <th class="px-4 py-3 text-left text-sm font-semibold text-foreground">Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="project in projectMetrics"
+                  :key="project.project_name"
+                  class="border-b border-border hover:bg-muted/50"
+                >
+                  <td class="px-4 py-3 text-sm font-medium text-foreground">{{ project.project_name }}</td>
+                  <td class="px-4 py-3 text-sm text-muted-foreground">{{ project.session_count }}</td>
+                  <td class="px-4 py-3">
+                    <div class="flex items-center gap-2">
+                      <div class="flex-1 max-w-[200px] h-6 bg-muted/50 rounded-full overflow-hidden">
+                        <div
+                          class="h-full bg-green-500 transition-all"
+                          :style="{ width: `${project.avg_tool_success_rate}%` }"
+                        ></div>
+                      </div>
+                      <span class="text-sm font-medium text-muted-foreground min-w-[45px]">
+                        {{ project.avg_tool_success_rate.toFixed(1) }}%
+                      </span>
                     </div>
-                    <span class="text-sm font-medium text-[var(--theme-text-secondary)] min-w-[45px]">
-                      {{ project.avg_tool_success_rate.toFixed(1) }}%
+                  </td>
+                  <td class="px-4 py-3">
+                    <span
+                      class="text-sm font-medium"
+                      :class="getTurnTimeColorClass(project.avg_turn_duration_seconds)"
+                    >
+                      {{ formatDuration(project.avg_turn_duration_seconds) }}
                     </span>
-                  </div>
-                </td>
-                <td class="px-4 py-3">
-                  <span
-                    class="text-sm font-medium"
-                    :class="getTurnTimeColorClass(project.avg_turn_duration_seconds)"
-                  >
-                    {{ formatDuration(project.avg_turn_duration_seconds) }}
-                  </span>
-                </td>
-                <td class="px-4 py-3 text-sm text-[var(--theme-text-secondary)]">{{ project.total_events.toLocaleString() }}</td>
-                <td class="px-4 py-3 text-sm text-[var(--theme-text-secondary)]">{{ formatMinutes(project.total_duration_minutes) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-muted-foreground">{{ project.total_events.toLocaleString() }}</td>
+                  <td class="px-4 py-3 text-sm text-muted-foreground">{{ formatMinutes(project.total_duration_minutes) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
     </div>
 
     <!-- Session View -->
     <div v-if="viewMode === 'session' && !loading">
-      <div v-if="!selectedProject" class="text-center py-12 text-[var(--theme-text-secondary)]">
+      <div v-if="!selectedProject" class="text-center py-12 text-muted-foreground">
         Select a project to view session metrics
       </div>
 
-      <div v-else-if="sessionMetrics.length === 0" class="text-center py-12 text-[var(--theme-text-secondary)]">
+      <div v-else-if="sessionMetrics.length === 0" class="text-center py-12 text-muted-foreground">
         No sessions found for this project
       </div>
 
-      <div v-else class="bg-[var(--theme-bg-primary)] rounded-lg border border-[var(--theme-border-primary)] overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full">
-            <thead class="bg-[var(--theme-bg-tertiary)] border-b border-[var(--theme-border-primary)]">
-              <tr>
-                <th class="px-4 py-3 text-left text-sm font-semibold text-[var(--theme-text-primary)]">Session</th>
-                <th class="px-4 py-3 text-left text-sm font-semibold text-[var(--theme-text-primary)]">Model</th>
-                <th class="px-4 py-3 text-left text-sm font-semibold text-[var(--theme-text-primary)]">Tool Success Rate</th>
-                <th class="px-4 py-3 text-left text-sm font-semibold text-[var(--theme-text-primary)]">Avg Turn Time</th>
-                <th class="px-4 py-3 text-left text-sm font-semibold text-[var(--theme-text-primary)]">Events/Min</th>
-                <th class="px-4 py-3 text-left text-sm font-semibold text-[var(--theme-text-primary)]">Duration</th>
-                <th class="px-4 py-3 text-left text-sm font-semibold text-[var(--theme-text-primary)]">Activity</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="session in sessionMetrics"
-                :key="`${session.source_app}:${session.session_id}`"
-                class="border-b border-[var(--theme-border-secondary)] hover:bg-[var(--theme-hover-bg)]"
-                :class="isOutlier(session) ? 'bg-yellow-50 dark:bg-yellow-900/20' : ''"
-              >
-                <td class="px-4 py-3 text-sm font-mono text-[var(--theme-text-primary)]">
-                  {{ formatSessionId(session.source_app, session.session_id) }}
-                </td>
-                <td class="px-4 py-3 text-sm text-[var(--theme-text-secondary)]">{{ session.model_name }}</td>
-                <td class="px-4 py-3">
-                  <div class="flex items-center gap-2">
-                    <div class="flex-1 max-w-[150px] h-6 bg-[var(--theme-bg-tertiary)] rounded-full overflow-hidden">
-                      <div
-                        class="h-full transition-all"
-                        :class="session.tool_success_rate < 80 ? 'bg-orange-500' : 'bg-green-500'"
-                        :style="{ width: `${session.tool_success_rate}%` }"
-                      ></div>
+      <Card v-else>
+        <CardContent class="p-0">
+          <div class="overflow-x-auto">
+            <table class="w-full">
+              <thead class="bg-muted/50 border-b border-border">
+                <tr>
+                  <th class="px-4 py-3 text-left text-sm font-semibold text-foreground">Session</th>
+                  <th class="px-4 py-3 text-left text-sm font-semibold text-foreground">Model</th>
+                  <th class="px-4 py-3 text-left text-sm font-semibold text-foreground">Tool Success Rate</th>
+                  <th class="px-4 py-3 text-left text-sm font-semibold text-foreground">Avg Turn Time</th>
+                  <th class="px-4 py-3 text-left text-sm font-semibold text-foreground">Events/Min</th>
+                  <th class="px-4 py-3 text-left text-sm font-semibold text-foreground">Duration</th>
+                  <th class="px-4 py-3 text-left text-sm font-semibold text-foreground">Activity</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="session in sessionMetrics"
+                  :key="`${session.source_app}:${session.session_id}`"
+                  class="border-b border-border hover:bg-muted/50"
+                  :class="isOutlier(session) ? 'bg-yellow-50 dark:bg-yellow-900/20' : ''"
+                >
+                  <td class="px-4 py-3 text-sm font-mono text-foreground">
+                    {{ formatSessionId(session.source_app, session.session_id) }}
+                  </td>
+                  <td class="px-4 py-3 text-sm text-muted-foreground">{{ session.model_name }}</td>
+                  <td class="px-4 py-3">
+                    <div class="flex items-center gap-2">
+                      <div class="flex-1 max-w-[150px] h-6 bg-muted/50 rounded-full overflow-hidden">
+                        <div
+                          class="h-full transition-all"
+                          :class="session.tool_success_rate < 80 ? 'bg-orange-500' : 'bg-green-500'"
+                          :style="{ width: `${session.tool_success_rate}%` }"
+                        ></div>
+                      </div>
+                      <span class="text-sm font-medium text-muted-foreground min-w-[45px]">
+                        {{ session.tool_success_rate.toFixed(1) }}%
+                      </span>
                     </div>
-                    <span class="text-sm font-medium text-[var(--theme-text-secondary)] min-w-[45px]">
-                      {{ session.tool_success_rate.toFixed(1) }}%
+                  </td>
+                  <td class="px-4 py-3">
+                    <span
+                      class="text-sm font-medium"
+                      :class="getTurnTimeColorClass(session.avg_turn_duration_seconds)"
+                    >
+                      {{ formatDuration(session.avg_turn_duration_seconds) }}
                     </span>
-                  </div>
-                </td>
-                <td class="px-4 py-3">
-                  <span
-                    class="text-sm font-medium"
-                    :class="getTurnTimeColorClass(session.avg_turn_duration_seconds)"
-                  >
-                    {{ formatDuration(session.avg_turn_duration_seconds) }}
-                  </span>
-                </td>
-                <td class="px-4 py-3 text-sm text-[var(--theme-text-secondary)]">{{ session.events_per_minute.toFixed(1) }}</td>
-                <td class="px-4 py-3 text-sm text-[var(--theme-text-secondary)]">{{ formatMinutes(session.session_duration_minutes) }}</td>
-                <td class="px-4 py-3">
-                  <Sparkline :timeline="session.activity_timeline" />
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-muted-foreground">{{ session.events_per_minute.toFixed(1) }}</td>
+                  <td class="px-4 py-3 text-sm text-muted-foreground">{{ formatMinutes(session.session_duration_minutes) }}</td>
+                  <td class="px-4 py-3">
+                    <Sparkline :timeline="session.activity_timeline" />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
       <!-- Outlier Legend -->
-      <div v-if="sessionMetrics.some(isOutlier)" class="mt-4 flex items-center gap-2 text-sm text-[var(--theme-text-secondary)]">
+      <div v-if="sessionMetrics.some(isOutlier)" class="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
         <div class="w-4 h-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded"></div>
         <span>Highlighted rows indicate outliers (success rate &lt; 80% or turn time &gt; 120s)</span>
       </div>
@@ -217,7 +221,7 @@
 
     <!-- Loading Indicator -->
     <div v-if="loading" class="flex justify-center py-12">
-      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--theme-primary)]"></div>
+      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
     </div>
   </div>
 </template>
@@ -227,6 +231,7 @@ import { ref, computed, watch } from 'vue';
 import type { SessionMetrics, ProjectMetrics } from '../types';
 import Sparkline from './Sparkline.vue';
 import { API_BASE_URL } from '../config';
+import { Card, CardContent } from './ui/card';
 
 // View state
 const viewMode = ref<'project' | 'session'>('project');

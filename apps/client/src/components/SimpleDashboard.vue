@@ -571,6 +571,9 @@ function sessionStatusLabel(session: Session): string {
 
 /** Parse task_context JSON and return a meaningful task name */
 function sessionTaskName(session: Session): string {
+  // Prefer topic (captured from first user prompt)
+  if (session.topic) return session.topic
+
   if (session.task_context) {
     try {
       const ctx: TaskContext = JSON.parse(session.task_context)

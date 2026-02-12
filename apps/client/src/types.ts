@@ -91,6 +91,7 @@ export interface Session {
   model_name: string;
   cwd: string;
   task_context: string;  // JSON string of TaskContext (from server branch-parser)
+  topic: string;  // First user prompt summary — describes what this session is working on
   compaction_count: number;  // E4-S3: Total compactions for this session
   last_compaction_at: number | null;  // E4-S3: Timestamp of last compaction
   compaction_history: string;  // E4-S3: JSON array of last 20 compaction timestamps

@@ -97,6 +97,13 @@ export function initEnricher(database: Database): void {
     // Column already exists, ignore
   }
 
+  // Migration: Add topic column if it doesn't exist
+  try {
+    db.exec(`ALTER TABLE sessions ADD COLUMN topic TEXT DEFAULT ''`);
+  } catch {
+    // Column already exists, ignore
+  }
+
   // Migration: Add compaction tracking columns if they don't exist (E4-S3)
   try {
     db.exec(`ALTER TABLE sessions ADD COLUMN compaction_count INTEGER DEFAULT 0`);
@@ -361,6 +368,8 @@ export function enrichEvent(event: HookEvent): void {
       // User responded, agent is active again — good time to detect branch changes
       updateSessionStatus(sessionId, event.source_app, 'active', now);
       if (branch) updateSessionBranch(sessionId, event.source_app, branch);
+      // Capture topic from the first meaningful prompt
+      captureSessionTopic(sessionId, event.source_app, event);
       break;
 
     case 'PreToolUse':
@@ -527,6 +536,37 @@ function updateSessionBranch(sessionId: string, sourceApp: string, newBranch: st
   db.prepare(
     'UPDATE sessions SET current_branch = ?, task_context = ? WHERE session_id = ? AND source_app = ?'
   ).run(newBranch, JSON.stringify(taskContext), sessionId, sourceApp);
+}
+
+/**
+ * Capture the session's topic from the first UserPromptSubmit event.
+ * Uses the AI summary if available, otherwise truncates the raw prompt.
+ * Only sets the topic once — subsequent prompts don't overwrite it.
+ */
+function captureSessionTopic(sessionId: string, sourceApp: string, event: HookEvent): void {
+  // Check if session already has a topic
+  const session = db.prepare(
+    'SELECT topic FROM sessions WHERE session_id = ? AND source_app = ?'
+  ).get(sessionId, sourceApp) as any;
+
+  if (session?.topic) return; // Already has a topic
+
+  // Prefer the AI summary, fall back to raw prompt text
+  let topic = event.summary || '';
+  if (!topic) {
+    const rawPrompt = event.payload?.prompt || '';
+    if (typeof rawPrompt === 'string' && rawPrompt.length > 0) {
+      // Truncate to first sentence or 120 chars
+      const firstLine = rawPrompt.split('\n')[0].trim();
+      topic = firstLine.length > 120 ? firstLine.slice(0, 117) + '...' : firstLine;
+    }
+  }
+
+  if (!topic) return;
+
+  db.prepare(
+    'UPDATE sessions SET topic = ? WHERE session_id = ? AND source_app = ?'
+  ).run(topic, sessionId, sourceApp);
 }
 
 // --- Detection helpers ---

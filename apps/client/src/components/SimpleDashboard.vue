@@ -46,7 +46,7 @@
                 :style="{ backgroundColor: statusColor(project.name) }"
               />
             </span>
-            {{ project.name }}
+            {{ projectDisplayName(project) }}
             <!-- Session count -->
             <span v-if="liveSessions(project.name).length > 0" class="text-xs text-muted-foreground ml-0.5">
               ({{ liveSessions(project.name).length }})
@@ -97,9 +97,26 @@
                     :style="{ backgroundColor: statusColor(activeProjectData.name) }"
                   />
                 </span>
-                <CardTitle class="text-lg font-semibold">
-                  {{ activeProjectData.name }}
+                <CardTitle v-if="renamingProject !== activeProjectData.name" class="text-lg font-semibold group/title flex items-center gap-1.5">
+                  {{ projectDisplayName(activeProjectData) }}
+                  <button
+                    @click.stop="startRename(activeProjectData.name)"
+                    class="p-0.5 rounded opacity-0 group-hover/title:opacity-100 hover:bg-muted transition-opacity"
+                    title="Rename project"
+                  >
+                    <Pencil class="w-3 h-3 text-muted-foreground" />
+                  </button>
                 </CardTitle>
+                <form v-else @submit.prevent="submitRename" class="flex items-center gap-1.5">
+                  <input
+                    v-model="renameInput"
+                    class="text-lg font-semibold bg-transparent border-b border-primary outline-none w-48"
+                    @keydown.escape="cancelRename"
+                    @blur="submitRename"
+                    ref="renameInputEl"
+                    autofocus
+                  />
+                </form>
                 <span
                   class="text-xs font-medium px-1.5 py-0.5 rounded-full"
                   :class="statusBadgeClass(activeProjectData.name)"
@@ -357,7 +374,7 @@ import {
   isNoisyEvent,
 } from '../utils/plainEnglish'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
-import { GitBranch, GitPullRequest, Check, X, Radio, Triangle, Activity, EyeOff, Clock, Zap } from 'lucide-vue-next'
+import { GitBranch, GitPullRequest, Check, X, Radio, Triangle, Activity, EyeOff, Clock, Zap, Pencil } from 'lucide-vue-next'
 
 interface TaskContext {
   prefix: string
@@ -413,6 +430,49 @@ function hideProject(name: string) {
 const visibleProjects = computed(() =>
   props.projects.filter(p => !hiddenProjects.has(p.name))
 )
+
+// ---------------------------------------------------------------------------
+// Project display name (prefer display_name over raw source_app name)
+// ---------------------------------------------------------------------------
+function projectDisplayName(project: Project): string {
+  return project.display_name || project.name
+}
+
+function projectDisplayNameByKey(name: string): string {
+  const project = props.projects.find(p => p.name === name)
+  return project?.display_name || name
+}
+
+// ---------------------------------------------------------------------------
+// Inline project rename
+// ---------------------------------------------------------------------------
+const renamingProject = ref<string | null>(null)
+const renameInput = ref('')
+
+function startRename(name: string) {
+  renamingProject.value = name
+  const project = props.projects.find(p => p.name === name)
+  renameInput.value = project?.display_name || project?.name || name
+}
+
+async function submitRename() {
+  if (!renamingProject.value) return
+  const name = renamingProject.value
+  const displayName = renameInput.value.trim()
+  renamingProject.value = null
+
+  try {
+    await fetch(`/api/projects/${encodeURIComponent(name)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_name: displayName }),
+    })
+  } catch { /* ignore — server will broadcast updated projects */ }
+}
+
+function cancelRename() {
+  renamingProject.value = null
+}
 
 // ---------------------------------------------------------------------------
 // Active project tab

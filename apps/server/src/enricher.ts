@@ -58,6 +58,13 @@ export function initEnricher(database: Database): void {
     // Column already exists, ignore
   }
 
+  // Migration: Add display_name column if it doesn't exist
+  try {
+    db.exec(`ALTER TABLE projects ADD COLUMN display_name TEXT DEFAULT ''`);
+  } catch {
+    // Column already exists, ignore
+  }
+
   // Migration: Add github_status column if it doesn't exist
   try {
     db.exec(`ALTER TABLE projects ADD COLUMN github_status TEXT DEFAULT ''`);
@@ -539,30 +546,20 @@ function updateSessionBranch(sessionId: string, sourceApp: string, newBranch: st
 }
 
 /**
- * Capture the session's topic from the first UserPromptSubmit event.
- * Uses the AI summary if available, otherwise truncates the raw prompt.
- * Only sets the topic once — subsequent prompts don't overwrite it.
+ * Capture the session's topic from the first UserPromptSubmit with an AI summary.
+ * Only uses the --summarize output, never the raw prompt (which is conversational
+ * and reads badly as a title). Only sets the topic once per session.
  */
 function captureSessionTopic(sessionId: string, sourceApp: string, event: HookEvent): void {
+  const topic = event.summary || '';
+  if (!topic) return; // No AI summary — skip, don't use raw prompt
+
   // Check if session already has a topic
   const session = db.prepare(
     'SELECT topic FROM sessions WHERE session_id = ? AND source_app = ?'
   ).get(sessionId, sourceApp) as any;
 
-  if (session?.topic) return; // Already has a topic
-
-  // Prefer the AI summary, fall back to raw prompt text
-  let topic = event.summary || '';
-  if (!topic) {
-    const rawPrompt = event.payload?.prompt || '';
-    if (typeof rawPrompt === 'string' && rawPrompt.length > 0) {
-      // Truncate to first sentence or 120 chars
-      const firstLine = rawPrompt.split('\n')[0].trim();
-      topic = firstLine.length > 120 ? firstLine.slice(0, 117) + '...' : firstLine;
-    }
-  }
-
-  if (!topic) return;
+  if (session?.topic) return;
 
   db.prepare(
     'UPDATE sessions SET topic = ? WHERE session_id = ? AND source_app = ?'
@@ -1255,9 +1252,20 @@ function trackFileAccessFromEvent(event: HookEvent, projectName: string): void {
 
 // --- Query functions for API ---
 
+/**
+ * Rename a project's display name. The internal `name` (source_app) stays the same
+ * since hooks use it, but the dashboard shows display_name instead.
+ */
+export function renameProject(name: string, displayName: string): boolean {
+  const result = db.prepare(
+    'UPDATE projects SET display_name = ?, updated_at = ? WHERE name = ?'
+  ).run(displayName.trim(), Date.now(), name);
+  return result.changes > 0;
+}
+
 export function getAllProjects(): Project[] {
   const projects = db.prepare(`
-    SELECT id, name, path, current_branch, active_sessions, last_activity,
+    SELECT id, name, display_name, path, current_branch, active_sessions, last_activity,
            test_status, test_summary, dev_servers, deployment_status, github_status, health,
            created_at, updated_at
     FROM projects
@@ -1273,7 +1281,7 @@ export function getAllProjects(): Project[] {
 
 export function getProjectByName(name: string): Project | null {
   const project = db.prepare(`
-    SELECT id, name, path, current_branch, active_sessions, last_activity,
+    SELECT id, name, display_name, path, current_branch, active_sessions, last_activity,
            test_status, test_summary, dev_servers, deployment_status, github_status, health,
            created_at, updated_at
     FROM projects

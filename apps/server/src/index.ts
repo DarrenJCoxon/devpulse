@@ -2,7 +2,7 @@ import { initDatabase, getDb, insertEvent, getFilterOptions, getRecentEvents, up
 import {
   initEnricher, enrichEvent, getAllProjects, getActiveSessions,
   getProjectStatus, getRecentDevLogs, getDevLogsForProject,
-  markIdleSessions, cleanupOldSessions, cleanupOldFileAccessLogs, scanPorts, getAgentTopology, refreshProjectBranches
+  markIdleSessions, cleanupOldSessions, cleanupOldFileAccessLogs, scanPorts, getAgentTopology, refreshProjectBranches, renameProject
 } from './enricher';
 import type { HookEvent, HumanInTheLoopResponse, Webhook } from './types';
 import { triggerWebhooks, testWebhook, validateWebhookUrl } from './webhooks';
@@ -669,6 +669,25 @@ const server = Bun.serve({
         });
       }
       return new Response(JSON.stringify(status), { headers: jsonHeaders });
+    }
+
+    // PATCH /api/projects/:name - Rename a project (set display_name)
+    if (url.pathname.match(/^\/api\/projects\/[^\/]+$/) && req.method === 'PATCH') {
+      const name = decodeURIComponent(url.pathname.split('/')[3]);
+      const body = await req.json() as { display_name?: string };
+      if (typeof body.display_name !== 'string') {
+        return new Response(JSON.stringify({ error: 'display_name is required' }), {
+          status: 400, headers: jsonHeaders
+        });
+      }
+      const updated = renameProject(name, body.display_name);
+      if (!updated) {
+        return new Response(JSON.stringify({ error: 'Project not found' }), {
+          status: 404, headers: jsonHeaders
+        });
+      }
+      broadcastProjects();
+      return new Response(JSON.stringify({ ok: true }), { headers: jsonHeaders });
     }
 
     // GET /api/sessions - List active sessions

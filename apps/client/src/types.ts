@@ -64,6 +64,7 @@ export interface ProjectHealth {
 export interface Project {
   id?: number;
   name: string;
+  display_name: string;  // User-set display name (empty = use name)
   path: string;
   current_branch: string;
   active_sessions: number;

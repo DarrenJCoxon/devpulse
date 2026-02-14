@@ -10,8 +10,6 @@ Real-time development dashboard for [Claude Code](https://docs.anthropic.com/en/
 - **GitHub integration** — recent commits, open PRs, and CI status polled from the GitHub API
 - **Vercel integration** — latest deployment status displayed per project
 - **Sound alerts** — optional audio notifications for key events
-- **Hook installer** — one command to wire up any project
-
 Built on top of [claude-code-hooks-multi-agent-observability](https://github.com/disler/claude-code-hooks-multi-agent-observability) by IndyDevDan.
 
 ---
@@ -82,35 +80,19 @@ This starts two processes in the current terminal:
 
 Wait for both "ready" messages before continuing. Press `Ctrl+C` to stop.
 
-### Step 5: Install hooks in a project you want to monitor
+### Step 5: Add a project
 
-From the DevPulse root, run:
+1. Open **http://localhost:5173**
+2. Click the **gear icon** in the header and choose **Add Project**
+3. Enter the absolute path to your project and a display name
+4. The wizard validates the path, shows a preview, then installs the hooks
+5. Optionally send a test event to confirm everything is connected
 
-```bash
-./scripts/install-hooks.sh /absolute/path/to/your/project "ProjectName"
-```
+Repeat for as many projects as you like.
 
-For example:
+### Step 6: Start coding
 
-```bash
-./scripts/install-hooks.sh ~/Code/my-api "MyAPI"
-./scripts/install-hooks.sh ~/Code/react-app "ReactApp"
-```
-
-This does three things:
-1. Creates `.claude/hooks/` in the target project with all the hook scripts
-2. Generates `.claude/settings.json` configured to send events labelled with your project name
-3. Backs up any existing `.claude/settings.json` to `.claude/settings.json.backup`
-
-You can run this on as many projects as you like.
-
-### Step 6: Open the dashboard and start coding
-
-1. Open **http://localhost:5173** in your browser
-2. Open a terminal, `cd` into any hooked project, and run `claude`
-3. Events stream into the dashboard as Claude Code works
-
-That's it. Every tool call, prompt, notification, and session event will appear in real-time.
+Open a terminal, `cd` into any hooked project, and run `claude`. Events stream into the dashboard in real-time.
 
 ---
 
@@ -158,28 +140,17 @@ You can find your team ID in the Vercel dashboard URL or via the API.
 
 ---
 
-## Adding More Projects
+## Adding & Removing Projects
 
-### Via the install script (recommended)
+Use the **Add Project** wizard in the dashboard (gear icon in the header). It validates the path, previews the changes, installs hooks, and lets you send a test event — all from the browser.
+
+Alternatively, from the terminal:
 
 ```bash
-./scripts/install-hooks.sh ~/Code/my-api "MyAPI"
+./scripts/install-hooks.sh /absolute/path/to/project "ProjectName"
 ```
 
-### Manually
-
-If you prefer to set things up yourself:
-
-1. Copy the hook scripts:
-   ```bash
-   cp -R /path/to/devpulse/.claude/hooks /path/to/your/project/.claude/hooks
-   ```
-
-2. Add hook entries to your project's `.claude/settings.json`, replacing `YourProjectName` with a unique name. See this repo's `.claude/settings.json` for the full configuration covering all 12 hook event types.
-
-### Removing hooks from a project
-
-Delete the hooks directory and restore the backup settings:
+To remove hooks from a project:
 
 ```bash
 rm -rf /path/to/project/.claude/hooks

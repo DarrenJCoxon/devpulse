@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.devpulse.client</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/darrencoxon/.bun/bin/bun</string>
+        <string>run</string>
+        <string>dev</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/darrencoxon/Documents/Codebases/current-projects/devPulse/apps/client</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>VITE_PORT</key>
+        <string>5173</string>
+        <key>PATH</key>
+        <string>/Users/darrencoxon/.bun/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/darrencoxon/Library/Logs/DevPulse/client.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/darrencoxon/Library/Logs/DevPulse/client.error.log</string>
+
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+</dict>
+</plist>

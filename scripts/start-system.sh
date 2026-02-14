@@ -10,6 +10,27 @@ BLUE='\033[0;34m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
+# Check if launchd services are already running
+LAUNCHD_CONFLICT=false
+if launchctl list "com.devpulse.server" &>/dev/null; then
+    LAUNCHD_CONFLICT=true
+fi
+if launchctl list "com.devpulse.client" &>/dev/null; then
+    LAUNCHD_CONFLICT=true
+fi
+
+if [ "$LAUNCHD_CONFLICT" = true ]; then
+    echo -e "${RED}WARNING: DevPulse launchd services are already running.${NC}"
+    echo -e "${YELLOW}Running this script alongside launchd will cause port conflicts.${NC}"
+    echo -e ""
+    echo -e "Either stop the services first:"
+    echo -e "  ${BLUE}./scripts/service.sh stop${NC}"
+    echo -e ""
+    echo -e "Or uninstall them:"
+    echo -e "  ${BLUE}./scripts/service.sh uninstall${NC}"
+    exit 1
+fi
+
 # Get the directory of this script
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # Get the project root directory (parent of scripts)

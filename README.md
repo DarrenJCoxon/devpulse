@@ -55,15 +55,32 @@ This creates a `.env` file at the project root. DevPulse works without any env v
 
 ### Step 4: Start DevPulse
 
+**Option A — Always-on service (recommended)**
+
+```bash
+./scripts/service.sh install
+```
+
+This registers DevPulse as a macOS background service via launchd. Both the server and client auto-start on login and auto-restart if they crash — no terminal needed.
+
+```bash
+./scripts/service.sh status   # check both services are running
+./scripts/service.sh logs      # tail log output
+./scripts/service.sh stop      # stop temporarily (restarts on login)
+./scripts/service.sh uninstall # remove the services entirely
+```
+
+**Option B — Manual (foreground)**
+
 ```bash
 ./scripts/start-system.sh
 ```
 
-This starts two processes:
+This starts two processes in the current terminal:
 - **Server** on `http://localhost:4000` — receives events, stores in SQLite, broadcasts via WebSocket
 - **Client** on `http://localhost:5173` — the dashboard UI
 
-Wait for both "ready" messages before continuing.
+Wait for both "ready" messages before continuing. Press `Ctrl+C` to stop.
 
 ### Step 5: Install hooks in a project you want to monitor
 
@@ -173,11 +190,22 @@ mv /path/to/project/.claude/settings.json.backup /path/to/project/.claude/settin
 
 ## Stopping DevPulse
 
+**If running as a service:**
+
+```bash
+./scripts/service.sh stop      # stop until next login
+./scripts/service.sh uninstall # stop and remove completely
+```
+
+**If running in the foreground:**
+
+Press `Ctrl+C` in the terminal, or run:
+
 ```bash
 ./scripts/reset-system.sh
 ```
 
-This stops both processes and resets the database. To stop without resetting, just press `Ctrl+C` in the terminal running `start-system.sh`.
+This stops both processes and resets the database.
 
 ---
 

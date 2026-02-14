@@ -33,15 +33,11 @@ cd devpulse
 
 ### Step 2: Install dependencies
 
-Run `bun install` in both the server and client directories:
+From the project root, run this single command to install everything:
 
 ```bash
-cd apps/server && bun install
-cd ../client && bun install
-cd ../..
+cd apps/server && bun install && cd ../client && bun install && cd ../..
 ```
-
-You should now be back in the project root.
 
 ### Step 3: Create your `.env` file (optional)
 
